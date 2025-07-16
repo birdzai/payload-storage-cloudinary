@@ -238,3 +238,10 @@ cloudinaryStorage({
    - Users often confused why they get thumbnail instead of transformed images
    - Clarified that `url` has default transformations, `thumbnailURL` is always 150x150
    - Added clear documentation and examples
+
+2. **Private Files Implementation**:
+   - When `privateFiles` is enabled, Cloudinary creates authenticated URLs during upload
+   - These URLs already include authentication (`/authenticated/s--...--/`)
+   - The plugin returns these pre-authenticated URLs instead of generating new tokens
+   - Client-side code must import from `'payload-storage-cloudinary/client'` to avoid server dependencies
+   - React hooks require passing the React instance in Next.js environments

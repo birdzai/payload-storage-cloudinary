@@ -182,8 +182,8 @@ function processUploadResult(result: any, data: any, file: any, config: Cloudina
       data.cloudinaryFolder = result.folder
     }
     
-    // Mark as private if configured
-    if (config.privateFiles) {
+    // Only mark as private if the user hasn't explicitly set it to false
+    if (config.privateFiles && data.isPrivate !== false) {
       data.isPrivate = true
       data.requiresSignedURL = true
     }
@@ -205,8 +205,8 @@ function buildUploadOptions(
     const privateOptions = generatePrivateUploadOptions(signedURLConfig)
     Object.assign(options, privateOptions)
     
-    // Mark file as private
-    if (data) {
+    // Only mark as private if the user hasn't explicitly set it to false
+    if (data && data.isPrivate !== false) {
       data.isPrivate = true
       data.requiresSignedURL = true
     }

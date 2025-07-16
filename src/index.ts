@@ -213,3 +213,4 @@ export type { CloudinaryStorageOptions, CloudinaryCollectionConfig, Transformati
 export { getTransformationUrl, commonPresets } from './helpers/transformations.js'
 export { generateSignedURL, generateDownloadURL, isAccessAllowed } from './helpers/signedURLs.js'
 export { getCloudinaryFolders } from './helpers/getCloudinaryFolders.js'
+export { fetchSignedURL, fetchSignedURLs, useSignedURL, requiresSignedURL, getImageURL, createPrivateImageComponent } from './helpers/clientHelpers.js'

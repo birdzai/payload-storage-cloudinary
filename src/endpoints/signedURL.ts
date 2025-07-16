@@ -55,8 +55,9 @@ export const createSignedURLEndpoint = (
         return Response.json({ error: 'Access denied' }, { status: 403 })
       }
       
-      // Generate signed URL
-      const signedUrl = generateSignedURL({
+      // For authenticated uploads, Cloudinary already provides a signed URL
+      // We should return the existing URL instead of generating a new one
+      const signedUrl = doc.cloudinaryUrl || doc.url || generateSignedURL({
         publicId: doc.cloudinaryPublicId,
         version: doc.cloudinaryVersion,
         resourceType: doc.cloudinaryResourceType,
@@ -155,8 +156,8 @@ export const createBatchSignedURLEndpoint = (
             }
           }
           
-          // Generate signed URL
-          const signedUrl = generateSignedURL({
+          // For authenticated uploads, use the existing URL
+          const signedUrl = doc.cloudinaryUrl || doc.url || generateSignedURL({
             publicId: doc.cloudinaryPublicId,
             version: doc.cloudinaryVersion,
             resourceType: doc.cloudinaryResourceType,

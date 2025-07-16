@@ -115,7 +115,6 @@ collections: {
     folder: {
       path: 'uploads', // Default folder
       enableDynamic: true, // Let users type folder path per upload
-      enableFolderSelection: true, // Show dropdown with existing Cloudinary folders
       fieldName: 'cloudinaryFolder', // Custom field name
     },
   },
@@ -234,7 +233,22 @@ collections: {
     privateFiles: true, // Files require signed URLs with 1-hour expiry
   },
 }
+
+// With custom authentication check:
+collections: {
+  documents: {
+    privateFiles: {
+      enabled: true,
+      customAuthCheck: (req, doc) => {
+        // Only allow authenticated users
+        return !!req.user
+      }
+    },
+  },
+}
 ```
+
+**Important**: When `privateFiles` is enabled, Cloudinary automatically creates authenticated URLs. The plugin returns these pre-authenticated URLs instead of generating new tokens.
 
 ### Transformations
 ```typescript
@@ -400,6 +414,8 @@ When you upload a file, Cloudinary stores these fields in your document:
 - `cloudinaryPublicId` - The Cloudinary public ID
 - `cloudinaryVersion` - Version for cache busting
 - `transformationPreset` - Selected preset name (if preset selection is enabled)
+- `isPrivate` - Whether the file requires authentication (if privateFiles is enabled)
+- `requiresSignedURL` - Whether a signed URL is needed (if privateFiles is enabled)
 
 ### Display the Original Image
 ```tsx
@@ -586,28 +602,55 @@ function LazyImage({ doc }) {
 ```
 
 ### Handle Private Files
+
+The plugin provides helper functions to simplify working with private files:
+
 ```typescript
-async function getProtectedImage(docId: string) {
-  const response = await fetch(`/api/media/signed-url/${docId}`)
-  const { url } = await response.json()
-  return url
+import { fetchSignedURL, useSignedURL, requiresSignedURL, getImageURL } from 'payload-storage-cloudinary/client'
+
+// Check if a document needs a signed URL
+if (requiresSignedURL(doc)) {
+  const url = await fetchSignedURL('media', doc.id)
 }
 
-// For React components
-function PrivateImage({ docId }: { docId: string }) {
-  const [url, setUrl] = useState<string>()
-  
-  useEffect(() => {
-    getProtectedImage(docId).then(setUrl)
-  }, [docId])
-  
-  return url ? <img src={url} alt="" /> : <div>Loading...</div>
-}
+// Get the appropriate URL (handles both private and public files)
+const imageUrl = await getImageURL(doc, 'media')
 ```
+
+For React components:
+```tsx
+import { useSignedURL, createPrivateImageComponent } from 'payload-storage-cloudinary/client'
+import React from 'react'
+
+// Option 1: Use the hook (pass React instance)
+function MyImage({ doc }) {
+  const { url, loading, error } = useSignedURL('media', doc?.id, {
+    react: React // Required in Next.js
+  })
+  
+  if (loading) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+  
+  return url ? <img src={url} alt={doc.alt} /> : null
+}
+
+// Option 2: Use the pre-built component
+const PrivateImage = createPrivateImageComponent(React)
+
+// Then use it:
+<PrivateImage doc={doc} collection="media" alt="My image" />
+```
+
+**Important Notes**:
+1. Users can control privacy on a per-file basis. Even when `privateFiles` is enabled for a collection, users can uncheck the "Private File" checkbox to make individual files public.
+2. The plugin returns Cloudinary's pre-authenticated URLs for private files - no additional token generation is needed.
+3. Make sure to pass the React instance to hooks when using Next.js or other frameworks where React isn't on `window`.
+4. Import from `'payload-storage-cloudinary/client'` for client-side usage to avoid server-side dependencies.
 
 ## Documentation
 
 - [Frontend Transformations Guide](./docs/frontend-transformations.md) - **Start here if images look wrong**
+- [Private Images Authorization Guide](./docs/private-images-guide.md) - **Complete guide for private files**
 - [Dynamic Folders Guide](./docs/dynamic-folders.md)
 - [Folder Management Guide](./docs/folder-management.md)
 - [Transformations Guide](./docs/transformations.md)

@@ -1,6 +1,8 @@
 # Custom Folder Selection Field Example
 
-This example shows how to implement a custom folder selection field that allows users to either select from existing Cloudinary folders or create new ones.
+**Note**: The built-in folder dropdown feature has been removed from the plugin due to Payload v3 form state integration issues. This example shows how you can implement your own custom folder selection field if needed.
+
+This example demonstrates how to create a custom folder selection field that allows users to either select from existing Cloudinary folders or create new ones.
 
 ## Implementation
 

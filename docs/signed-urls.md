@@ -60,12 +60,20 @@ For full configuration, use an object:
 
 ## How It Works
 
-1. **Upload**: Files marked as private are uploaded with restricted access
-2. **Storage**: Cloudinary stores files with authentication requirements
+1. **Upload**: Files can be marked as private on a per-file basis using the checkbox
+2. **Storage**: Cloudinary creates authenticated URLs (e.g., `/authenticated/s--ABC123--/`) during upload
 3. **Access**: Users request signed URLs through API endpoints
-4. **Validation**: System checks user permissions
-5. **Generation**: Time-limited signed URLs are created
-6. **Delivery**: Secure URLs provided for temporary access
+4. **Validation**: System checks user permissions via Payload's access control
+5. **URL Return**: For authenticated uploads, the plugin returns Cloudinary's pre-authenticated URL
+6. **Delivery**: Browser uses the authenticated URL to display the image
+
+## Important Notes
+
+1. **Cloudinary's Authentication**: When files are uploaded with `privateFiles` enabled, Cloudinary automatically creates authenticated URLs. These URLs already include authentication (the `s--...--` signature) and work without additional tokens.
+
+2. **Per-file control**: Even when `privateFiles` is enabled for a collection, users can now uncheck the "Private File" checkbox to make individual files public.
+
+3. **Client-side imports**: Always use `'payload-storage-cloudinary/client'` for browser code to avoid server dependencies.
 
 ## API Endpoints
 
@@ -98,14 +106,11 @@ Content-Type: application/json
 Response:
 ```json
 {
-  "results": [
-    {
-      "id": "id1",
-      "url": "https://res.cloudinary.com/...",
-      "expiresIn": 3600
-    },
-    ...
-  ]
+  "urls": {
+    "id1": "https://res.cloudinary.com/...",
+    "id2": "https://res.cloudinary.com/...",
+    "id3": "https://res.cloudinary.com/..."
+  }
 }
 ```
 
@@ -117,35 +122,100 @@ GET /api/{collection}/signed-url/{documentId}?download=true
 
 ## Frontend Usage
 
-### React Component for Protected Images
+The plugin now provides built-in helper functions for easier frontend integration:
+
+### Using the Built-in Helpers
+
+```typescript
+import { fetchSignedURL, useSignedURL, PrivateImage, requiresSignedURL, getImageURL } from 'payload-storage-cloudinary'
+
+// 1. Simple fetch for a signed URL
+const url = await fetchSignedURL('media', docId)
+
+// 2. Check if a document needs a signed URL
+if (requiresSignedURL(doc)) {
+  const url = await fetchSignedURL('media', doc.id)
+}
+
+// 3. Get the appropriate URL (signed or regular)
+const imageUrl = await getImageURL(doc, 'media')
+```
+
+### React Hook with Auto-refresh
 
 ```tsx
-function ProtectedImage({ docId }) {
-  const [url, setUrl] = useState(null)
+import { useSignedURL } from 'payload-storage-cloudinary'
+
+function ProtectedImage({ doc }) {
+  // Automatically refreshes before expiry
+  const { url, loading, error } = useSignedURL('media', doc?.id)
   
-  useEffect(() => {
-    fetch(`/api/media/signed-url/${docId}`)
-      .then(res => res.json())
-      .then(data => setUrl(data.url))
-  }, [docId])
+  if (loading) return <div>Loading...</div>
+  if (error) return <div>Error: {error.message}</div>
+  if (!url) return null
   
-  return url ? <img src={url} /> : <div>Loading...</div>
+  return <img src={url} alt={doc.alt} />
 }
+```
+
+### Pre-built React Component
+
+```tsx
+import { PrivateImage } from 'payload-storage-cloudinary'
+
+// Simple usage
+<PrivateImage 
+  doc={mediaDoc} 
+  collection="media" 
+  alt="Protected content"
+  className="w-full h-auto"
+/>
 ```
 
 ### Gallery with Batch URLs
 
 ```typescript
+import { fetchSignedURLs } from 'payload-storage-cloudinary'
+
+// Using the built-in helper
 async function loadGallery(imageIds) {
+  const urls = await fetchSignedURLs('media', imageIds)
+  return urls // Returns { docId: url } mapping
+}
+
+// Or manually if you need more control
+async function loadGalleryManual(imageIds) {
   const response = await fetch('/api/media/signed-urls', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin', // Important for authentication
     body: JSON.stringify({ ids: imageIds })
   })
   
-  const { results } = await response.json()
-  return results
+  const { urls } = await response.json()
+  return urls
 }
+```
+
+### Authentication Options
+
+```typescript
+// With JWT token
+const url = await fetchSignedURL('media', docId, {
+  token: 'your-jwt-token'
+})
+
+// With custom headers
+const url = await fetchSignedURL('media', docId, {
+  headers: {
+    'X-Custom-Auth': 'value'
+  }
+})
+
+// With different base URL (for server-side rendering)
+const url = await fetchSignedURL('media', docId, {
+  baseUrl: 'http://localhost:3000'
+})
 ```
 
 ## Access Control
