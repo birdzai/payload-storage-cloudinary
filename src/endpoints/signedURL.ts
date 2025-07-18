@@ -88,6 +88,16 @@ export const createSignedURLEndpoint = (
       
     } catch (error) {
       console.error('Error generating signed URL:', error)
+      
+      // Check if it's an authentication error
+      if (error instanceof Error && 
+          (error.message.includes('Authentication required') || 
+           error.message.includes('Unauthorized'))) {
+        return Response.json({ 
+          error: 'Authentication required for private files' 
+        }, { status: 403 })
+      }
+      
       return Response.json({ 
         error: 'Failed to generate signed URL' 
       }, { status: 500 })

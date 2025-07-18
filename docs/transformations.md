@@ -1,24 +1,59 @@
 # Transformations & Presets
 
-Apply automatic image transformations and use predefined transformation presets.
+Apply automatic image transformations and use predefined transformation presets with full control over when and how transformations are applied.
 
 ## Overview
 
-The plugin supports two ways to apply transformations:
+The plugin supports multiple transformation approaches:
 1. **Default transformations** - Applied to all uploads automatically
-2. **Transformation presets** - Predefined sets that users can select
+2. **Transformation presets** - Predefined sets that users can select (supports multi-select)
+3. **Preserve original** - Keep untransformed originals with URL-based transformations
+4. **Public transformations** - Watermarked/blurred previews for private files
 
-## Default Transformations
+## New Configuration Structure
 
-Apply transformations to all uploads in a collection:
+The transformation system has been reorganized for better control:
 
 ```typescript
 cloudinaryStorage({
   collections: {
     media: {
       transformations: {
-        quality: 'auto',
-        fetch_format: 'auto',
+        // Default transformations applied to all uploads
+        default: {
+          quality: 'auto',
+          fetch_format: 'auto',
+        },
+        
+        // Predefined transformation presets
+        presets: [
+          {
+            name: 'card',
+            label: 'Card View',
+            transformation: {
+              width: 400,
+              height: 400,
+              crop: 'fill',
+              gravity: 'auto',
+            },
+          },
+          {
+            name: 'hero',
+            label: 'Hero Image',
+            transformation: {
+              width: 1920,
+              height: 600,
+              crop: 'fill',
+              gravity: 'auto',
+            },
+          },
+        ],
+        
+        // Enable preset selection (supports multi-select)
+        enablePresetSelection: true,
+        
+        // Preserve original without transformations (recommended)
+        preserveOriginal: true,
       },
     },
   },
@@ -62,108 +97,175 @@ transformations: {
 }
 ```
 
-## Transformation Presets
+## Understanding URL Fields
 
-Allow users to select from predefined transformation sets:
+The plugin now creates different URL fields based on your configuration:
+
+### With `preserveOriginal: true` (Recommended)
+- **`url`**: Always contains the original, untransformed URL
+- **`originalUrl`**: Same as `url` - the original file
+- **`transformedUrl`**: Contains URL with selected transformation presets applied
+- **`thumbnailURL`**: 150x150 thumbnail for admin UI
+
+### With `preserveOriginal: false`
+- **`url`**: Contains the image with default transformations applied
+- **`originalUrl`**: The original untransformed URL
+- **`transformedUrl`**: Not used in this mode
+
+## Multi-Select Transformation Presets
+
+The plugin now supports selecting multiple transformation presets simultaneously:
 
 ```typescript
-import { cloudinaryStorage, commonPresets } from 'payload-storage-cloudinary'
-
-cloudinaryStorage({
-  collections: {
-    media: {
-      transformations: {
-        presets: commonPresets,
-        enablePresetSelection: true,
+transformations: {
+  presets: [
+    {
+      name: 'grayscale',
+      label: 'Grayscale',
+      transformation: {
+        effect: 'grayscale',
       },
     },
-  },
-})
-```
-
-### Built-in Common Presets
-
-The plugin includes these presets:
-- **thumbnail**: 150x150 thumb crop
-- **card**: 400x400 fill crop
-- **banner**: 1200x600 fill crop
-- **og-image**: 1200x630 Open Graph size
-- **avatar**: 200x200 circular crop focused on faces
-- **blur**: Blurred preview image
-
-### Custom Presets
-
-Define your own transformation presets:
-
-```typescript
-const myPresets = {
-  ...commonPresets, // Include built-in presets
-  
-  // Add custom presets
-  productThumb: {
-    width: 300,
-    height: 300,
-    crop: 'fill',
-    gravity: 'auto',
-    quality: 'auto:best',
-  },
-  productHero: {
-    width: 1920,
-    height: 800,
-    crop: 'fill',
-    gravity: 'auto',
-    quality: 'auto:best',
-  },
-}
-
-// Use in configuration
-transformations: {
-  presets: myPresets,
-  enablePresetSelection: true,
+    {
+      name: 'card',
+      label: 'Card Size',
+      transformation: {
+        width: 400,
+        height: 400,
+        crop: 'fill',
+      },
+    },
+  ],
+  enablePresetSelection: true, // This now enables multi-select by default
 }
 ```
 
-### Using Selected Presets
+### How Multi-Select Works
 
-When preset selection is enabled, users can choose a preset during upload. The selection is stored in the `transformationPreset` field:
+1. Users can select multiple presets (e.g., "Grayscale" + "Card Size")
+2. Transformations are combined automatically
+3. The `transformedUrl` field contains the combined transformations
+4. All transformations are applied via URL parameters (no re-upload)
+
+### Frontend Usage
 
 ```typescript
-// In your frontend
-import { getTransformationUrl, commonPresets } from 'payload-storage-cloudinary'
+// The transformationPreset field now contains an array
+document.transformationPreset = ['grayscale', 'card']
 
-const imageUrl = media.transformationPreset
-  ? getTransformationUrl({
-      publicId: media.cloudinaryPublicId,
-      version: media.cloudinaryVersion,
-      presetName: media.transformationPreset,
-      presets: commonPresets,
-    })
-  : media.url
+// Use the pre-computed transformedUrl
+const imageUrl = document.transformedUrl || document.url
+```
+
+## Built-in Preset Examples
+
+Common preset configurations you can use:
+
+```typescript
+const commonPresets = [
+  {
+    name: 'thumbnail',
+    label: 'Thumbnail',
+    transformation: {
+      width: 150,
+      height: 150,
+      crop: 'thumb',
+      gravity: 'auto',
+    },
+  },
+  {
+    name: 'card',
+    label: 'Card View',
+    transformation: {
+      width: 400,
+      height: 400,
+      crop: 'fill',
+      gravity: 'auto',
+    },
+  },
+  {
+    name: 'hero',
+    label: 'Hero Image',
+    transformation: {
+      width: 1920,
+      height: 600,
+      crop: 'fill',
+      gravity: 'auto',
+    },
+  },
+  {
+    name: 'grayscale',
+    label: 'Grayscale',
+    transformation: {
+      effect: 'grayscale',
+    },
+  },
+]
 ```
 
 ## Advanced Configuration
 
-### Organized Transformation Config
+### Complete Configuration Example
 
 ```typescript
 transformations: {
-  // Default transformations for all uploads
+  // Default transformations applied to all uploads
   default: {
     quality: 'auto',
     fetch_format: 'auto',
   },
   
-  // Available presets
-  presets: {
-    thumbnail: { width: 150, height: 150, crop: 'thumb' },
-    hero: { width: 1920, height: 600, crop: 'fill' },
-  },
+  // Predefined transformation presets
+  presets: [
+    {
+      name: 'thumbnail',
+      label: 'Thumbnail',
+      transformation: {
+        width: 150,
+        height: 150,
+        crop: 'thumb',
+        gravity: 'auto',
+      },
+    },
+    {
+      name: 'card',
+      label: 'Card View',
+      transformation: {
+        width: 400,
+        height: 400,
+        crop: 'fill',
+        gravity: 'auto',
+      },
+    },
+  ],
   
-  // Enable preset selection UI
+  // Enable preset selection UI (supports multi-select)
   enablePresetSelection: true,
   
-  // Preserve original without transformations
+  // Custom field name for presets
+  presetFieldName: 'transformationPreset',
+  
+  // Preserve original without transformations (recommended)
   preserveOriginal: true,
+  
+  // Public previews for private files
+  publicTransformation: {
+    enabled: true,
+    watermark: {
+      defaultText: 'PREVIEW',
+      style: {
+        fontFamily: 'Arial',
+        fontSize: 50,
+        color: 'rgb:808080',
+        opacity: 50,
+        angle: -45,
+      },
+    },
+    blur: {
+      effect: 'blur:2000',
+      quality: 30,
+    },
+  },
 }
 ```
 
@@ -189,13 +291,13 @@ transformations: {
 
 ## Important Notes
 
-1. **URL Field**: The `url` field contains default transformations
-2. **Thumbnail URL**: Always 150x150 for admin UI display
-3. **Frontend Control**: Use helper functions to apply different transformations
-4. **Performance**: Default transformations happen during upload
-5. **Storage**: Transformations affect stored file size
+1. **URL Fields**: Multiple URL fields are created based on your configuration
+2. **Multi-Select**: Users can select multiple presets that get combined automatically
+3. **No Re-uploads**: Changing presets doesn't trigger new uploads
+4. **URL-based**: All transformations are applied via URL parameters when `preserveOriginal: true`
+5. **Performance**: With `preserveOriginal: true`, transformation happens on-demand
 
-## Examples
+## Complete Examples
 
 ### E-commerce Product Images
 
@@ -205,28 +307,83 @@ transformations: {
     quality: 'auto:best',
     fetch_format: 'auto',
   },
-  presets: {
-    listing: { width: 400, height: 400, crop: 'fill' },
-    detail: { width: 1200, quality: 'auto:best' },
-    zoom: { width: 2400, quality: 100 },
-  },
+  presets: [
+    {
+      name: 'listing',
+      label: 'Product Listing',
+      transformation: {
+        width: 400,
+        height: 400,
+        crop: 'fill',
+        gravity: 'auto',
+      },
+    },
+    {
+      name: 'detail',
+      label: 'Product Detail',
+      transformation: {
+        width: 1200,
+        quality: 'auto:best',
+      },
+    },
+    {
+      name: 'zoom',
+      label: 'Zoom View',
+      transformation: {
+        width: 2400,
+        quality: 100,
+      },
+    },
+  ],
   enablePresetSelection: true,
+  preserveOriginal: true,
 }
 ```
 
-### Blog Images
+### Blog Images with Multi-Select
 
 ```typescript
 transformations: {
   default: {
-    width: 1200,
     quality: 'auto',
     fetch_format: 'auto',
   },
-  presets: {
-    thumbnail: { width: 300, height: 200, crop: 'fill' },
-    featured: { width: 1920, height: 600, crop: 'fill' },
-  },
+  presets: [
+    {
+      name: 'thumbnail',
+      label: 'Thumbnail',
+      transformation: {
+        width: 300,
+        height: 200,
+        crop: 'fill',
+      },
+    },
+    {
+      name: 'featured',
+      label: 'Featured',
+      transformation: {
+        width: 1920,
+        height: 600,
+        crop: 'fill',
+      },
+    },
+    {
+      name: 'grayscale',
+      label: 'Grayscale',
+      transformation: {
+        effect: 'grayscale',
+      },
+    },
+    {
+      name: 'sepia',
+      label: 'Sepia',
+      transformation: {
+        effect: 'sepia',
+      },
+    },
+  ],
+  enablePresetSelection: true,
+  preserveOriginal: true,
 }
 ```
 
@@ -235,17 +392,46 @@ transformations: {
 ```typescript
 transformations: {
   default: {
-    width: 500,
-    height: 500,
-    crop: 'fill',
-    gravity: 'face',
     quality: 'auto',
+    fetch_format: 'auto',
   },
-  presets: {
-    small: { width: 50, height: 50, radius: 'max' },
-    medium: { width: 100, height: 100, radius: 'max' },
-    large: { width: 200, height: 200, radius: 'max' },
-  },
+  presets: [
+    {
+      name: 'small',
+      label: 'Small Avatar',
+      transformation: {
+        width: 50,
+        height: 50,
+        crop: 'fill',
+        gravity: 'face',
+        radius: 'max',
+      },
+    },
+    {
+      name: 'medium',
+      label: 'Medium Avatar',
+      transformation: {
+        width: 100,
+        height: 100,
+        crop: 'fill',
+        gravity: 'face',
+        radius: 'max',
+      },
+    },
+    {
+      name: 'large',
+      label: 'Large Avatar',
+      transformation: {
+        width: 200,
+        height: 200,
+        crop: 'fill',
+        gravity: 'face',
+        radius: 'max',
+      },
+    },
+  ],
+  enablePresetSelection: true,
+  preserveOriginal: true,
 }
 ```
 

@@ -9,6 +9,8 @@ import { createSignedURLEndpoint, createBatchSignedURLEndpoint } from './endpoin
 import { createUploadStatusEndpoint, createCancelUploadEndpoint } from './endpoints/uploadStatus.js'
 import { normalizeCollectionConfig, getFolderConfig, getTransformationConfig } from './helpers/normalizeConfig.js'
 import { createBeforeChangeHook } from './hooks/beforeChange.js'
+import { createAfterChangeHook } from './hooks/afterChange.js'
+import { createAfterReadHook } from './hooks/afterRead.js'
 import { v2 as cloudinary } from 'cloudinary'
 
 export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
@@ -86,6 +88,30 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                   readOnly: true,
                 },
               },
+              // Add originalUrl field to store untransformed URL
+              {
+                name: 'originalUrl',
+                type: 'text',
+                label: 'Original URL',
+                admin: {
+                  readOnly: true,
+                  description: 'Direct URL to the original file without transformations',
+                },
+              },
+              // Add transformedUrl field to store URL with transformations
+              {
+                name: 'transformedUrl',
+                type: 'text',
+                label: 'Transformed URL',
+                admin: {
+                  readOnly: true,
+                  description: 'URL with applied transformations',
+                  condition: (data: any) => {
+                    const presetField = transformConfig.presetFieldName || 'transformationPreset'
+                    return !!data[presetField]
+                  },
+                },
+              },
               // Add file size field (visible)
               {
                 name: 'filesize',
@@ -111,13 +137,14 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
               ...(transformConfig.enablePresetSelection && transformConfig.presets?.length ? [{
                 name: transformConfig.presetFieldName || 'transformationPreset',
                 type: 'select' as const,
-                label: 'Transformation Preset',
+                label: 'Transformation Presets',
+                hasMany: true,
                 options: transformConfig.presets.map(preset => ({
                   label: preset.label,
                   value: preset.name,
                 })),
                 admin: {
-                  description: 'Apply predefined image transformations',
+                  description: 'Select multiple transformations to apply (they will be combined)',
                 },
               }] : []),
               // Add private file fields only if private files are enabled
@@ -138,6 +165,75 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
                   admin: {
                     hidden: true,
                     readOnly: true,
+                  },
+                },
+              ] : []),
+              // Add public transformation fields if enabled
+              ...(transformConfig.publicTransformation?.enabled && config.privateFiles ? [
+                {
+                  name: transformConfig.publicTransformation.fieldName || 'hasPublicTransformation',
+                  type: 'checkbox' as const,
+                  label: 'Enable Public Preview',
+                  defaultValue: false,
+                  admin: {
+                    description: 'Generate a public URL with transformations for this private file',
+                    condition: (data: any) => data.isPrivate === true,
+                  },
+                },
+                // Add transformation type selector
+                {
+                  name: transformConfig.publicTransformation.typeFieldName || 'transformationType',
+                  type: 'select' as const,
+                  label: 'Transformation Type',
+                  defaultValue: 'watermark',
+                  options: [
+                    { label: 'Watermark', value: 'watermark' },
+                    { label: 'Blur', value: 'blur' },
+                  ],
+                  admin: {
+                    description: 'Choose the type of transformation for public preview',
+                    condition: (data: any) => data.isPrivate === true && data[transformConfig.publicTransformation?.fieldName || 'hasPublicTransformation'] === true,
+                  },
+                },
+                // Add watermark text field conditionally
+                {
+                  name: transformConfig.publicTransformation.watermark?.textFieldName || 'watermarkText',
+                  type: 'text' as const,
+                  label: 'Watermark Text',
+                  defaultValue: transformConfig.publicTransformation.watermark?.defaultText || '',
+                  admin: {
+                    description: 'Text to display as watermark on public preview',
+                    condition: (data: any) => {
+                      const typeField = transformConfig.publicTransformation?.typeFieldName || 'transformationType'
+                      return data.isPrivate === true && 
+                             data[transformConfig.publicTransformation?.fieldName || 'hasPublicTransformation'] === true &&
+                             data[typeField] === 'watermark'
+                    },
+                  },
+                },
+                {
+                  name: 'publicTransformationUrl',
+                  type: 'text' as const,
+                  label: 'Public Preview URL',
+                  admin: {
+                    readOnly: true,
+                    description: 'Public URL with applied transformations',
+                    condition: (data: any) => data.isPrivate === true && data[transformConfig.publicTransformation?.fieldName || 'hasPublicTransformation'] === true,
+                  },
+                },
+                // Add preview URL with transformation presets
+                {
+                  name: 'previewUrl',
+                  type: 'text' as const,
+                  label: 'Preview URL with Transformations',
+                  admin: {
+                    readOnly: true,
+                    description: 'Preview URL with selected transformation presets applied',
+                    condition: (data: any) => {
+                      const presetField = transformConfig.presetFieldName || 'transformationPreset'
+                      const hasPresets = data[presetField] && (Array.isArray(data[presetField]) ? data[presetField].length > 0 : true)
+                      return hasPresets && data.isPrivate === true && data[transformConfig.publicTransformation?.fieldName || 'hasPublicTransformation'] === true
+                    },
                   },
                 },
               ] : []),
@@ -185,14 +281,32 @@ export const cloudinaryStorage = (options: CloudinaryStorageOptions) => {
         }
         
         
-        // Add beforeChange hook for folder moves if dynamic folders are enabled
+        // Add hooks
         const folderConfig = getFolderConfig(config)
+        const transformConfig = getTransformationConfig(config)
         const hooks = { ...(collection.hooks || {}) }
         
+        // Add beforeChange hook for folder moves if dynamic folders are enabled
         if (folderConfig.enableDynamic) {
           hooks.beforeChange = [
             ...(hooks.beforeChange || []),
             createBeforeChangeHook(collection.slug, config)
+          ]
+        }
+        
+        // Add afterChange hook for privacy changes if private files are enabled
+        if (config.privateFiles) {
+          hooks.afterChange = [
+            ...(hooks.afterChange || []),
+            createAfterChangeHook(collection.slug, config)
+          ]
+        }
+        
+        // Add afterRead hook for dynamic URL generation with presets
+        if (transformConfig.enablePresetSelection && transformConfig.preserveOriginal) {
+          hooks.afterRead = [
+            ...(hooks.afterRead || []),
+            createAfterReadHook(collection.slug, config)
           ]
         }
         

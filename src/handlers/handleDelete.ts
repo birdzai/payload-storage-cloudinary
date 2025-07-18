@@ -22,9 +22,25 @@ export const createDeleteHandler = (
   try {
     // Use stored public_id if available, otherwise extract from URL
     const publicId = (doc as any).cloudinaryPublicId || extractPublicId(doc.url || filename)
+    const resourceType = (doc as any).cloudinaryResourceType || 'image'
     
     if (publicId) {
-      await cloudinary.uploader.destroy(publicId)
+      // Delete the main asset
+      await cloudinary.uploader.destroy(publicId, {
+        resource_type: resourceType,
+        invalidate: true, // Invalidate CDN cache
+      })
+      
+      // Also delete all derived resources (transformations)
+      // This ensures both original and transformed versions are removed
+      try {
+        await cloudinary.api.delete_derived_resources([publicId], {
+          resource_type: resourceType,
+        })
+      } catch (derivedError) {
+        // It's okay if this fails - not all resources have derived versions
+        console.log(`No derived resources to delete for ${publicId}`)
+      }
     }
   } catch (error) {
     console.error(`Failed to delete from Cloudinary: ${error instanceof Error ? error.message : 'Unknown error'}`)

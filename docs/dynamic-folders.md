@@ -4,7 +4,7 @@ Allow users to organize uploads by specifying folder paths during upload.
 
 ## Overview
 
-Dynamic folders let users choose where files are stored in Cloudinary by entering a folder path in the upload form.
+Dynamic folders let users choose where files are stored in Cloudinary by entering a folder path in the upload form. This feature also includes **smart asset moving** - when you change the folder path, the plugin moves the existing asset in Cloudinary instead of creating a duplicate.
 
 ## Configuration
 
@@ -37,9 +37,9 @@ collections: {
 }
 ```
 
-## User-Selectable Folders
+## User-Specified Folders
 
-Allow users to choose the folder when uploading:
+Allow users to type the folder path when uploading:
 
 ```typescript
 cloudinaryStorage({
@@ -47,7 +47,7 @@ cloudinaryStorage({
     media: {
       folder: {
         path: 'uploads', // Default folder
-        enableDynamic: true, // Enable folder selection
+        enableDynamic: true, // Enable folder input
         fieldName: 'cloudinaryFolder', // Field name (optional, defaults to 'cloudinaryFolder')
       },
     },
@@ -55,10 +55,18 @@ cloudinaryStorage({
 })
 ```
 
-This adds a "Cloudinary Folder" field to the upload form where users can specify:
+This adds a "Cloudinary Folder" text field to the upload form where users can specify folder paths like:
 - `products/electronics`
 - `blog/2024/july`
 - `team/marketing`
+
+### Smart Asset Moving
+
+When you change the folder path for an existing file, the plugin:
+1. Uses Cloudinary's rename API to move the asset
+2. Preserves the same public ID and version
+3. Updates the folder location without re-uploading
+4. Maintains all existing URLs and transformations
 
 ### Custom Field Implementation
 
@@ -94,11 +102,8 @@ const Media: CollectionConfig = {
       label: 'Upload Folder',
       defaultValue: 'uploads',
       admin: {
-        description: 'Choose the folder for this upload',
-        // Add custom component if needed
-        components: {
-          Field: MyCustomFolderSelector,
-        },
+        description: 'Choose the folder for this upload (e.g., products/2024)',
+        placeholder: 'uploads',
       },
       // Add validation if needed
       validate: (value) => {
@@ -119,19 +124,35 @@ The plugin will still use the field value during upload, but you have complete c
 
 ### By Date
 
-While function-based folder configuration is not currently supported, you can achieve date-based organization by:
+Create date-based organization by using the folder input to specify dates:
 
-1. Using the folder input to manually specify dates: `uploads/2024/07`
-2. Creating different collections for different time periods
-3. Using a custom field component (see [Custom Folder Field Example](./custom-folder-field-example.md))
+```
+uploads/2024/07/
+uploads/2024/08/
+uploads/2025/01/
+```
+
+### By Content Type
+
+Organize by the type of content:
+
+```
+images/products/
+images/blog/
+videos/tutorials/
+documents/contracts/
+```
 
 ### By User or Role
 
 For user-based organization:
 
-1. Use the folder input to manually specify user folders: `users/john-doe`
-2. Create separate collections with different default folders per role
-3. Implement a custom field component with user-aware logic
+```
+users/john-doe/
+users/jane-smith/
+teams/marketing/
+teams/development/
+```
 
 ## Best Practices
 
@@ -140,6 +161,7 @@ For user-based organization:
 3. **Limit Depth**: Don't create overly deep folder structures (max 3-4 levels)
 4. **Consider Performance**: Cloudinary performs better with a balanced folder structure
 5. **Plan Ahead**: Design your folder structure before uploading many files
+6. **Use Smart Moving**: Change folder paths instead of re-uploading files to new locations
 
 ## Common Folder Structures
 
@@ -169,7 +191,37 @@ clients/
 │   ├── assets/
 │   └── documents/
 └── xyz-inc/
+    ├── branding/
+    └── products/
+
+# Hybrid approach
+content/
+├── 2024/
+│   ├── products/
+│   ├── blog/
+│   └── marketing/
+└── 2025/
+    ├── products/
+    └── blog/
 ```
+
+## Technical Details
+
+### Folder Creation
+- Folders are automatically created in Cloudinary when files are uploaded
+- No need to pre-create folders in the Cloudinary dashboard
+- The plugin handles folder creation seamlessly
+
+### Asset Moving
+- Uses Cloudinary's `rename` API to move assets between folders
+- Preserves the same public ID and version
+- All existing URLs continue to work
+- Transformation URLs are automatically updated
+
+### Validation
+- Folder names are cleaned to remove invalid characters
+- Leading and trailing slashes are automatically removed
+- Empty folder names default to the configured default folder
 
 ## Folder Permissions
 

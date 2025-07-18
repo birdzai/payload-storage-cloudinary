@@ -61,19 +61,26 @@ For full configuration, use an object:
 ## How It Works
 
 1. **Upload**: Files can be marked as private on a per-file basis using the checkbox
-2. **Storage**: Cloudinary creates authenticated URLs (e.g., `/authenticated/s--ABC123--/`) during upload
+2. **Storage**: When `privateFiles` is enabled, Cloudinary creates authenticated URLs during upload
 3. **Access**: Users request signed URLs through API endpoints
-4. **Validation**: System checks user permissions via Payload's access control
-5. **URL Return**: For authenticated uploads, the plugin returns Cloudinary's pre-authenticated URL
-6. **Delivery**: Browser uses the authenticated URL to display the image
+4. **Validation**: System checks user permissions via Payload's access control and custom auth logic
+5. **URL Return**: Plugin returns time-limited signed URLs for authenticated access
+6. **Delivery**: Browser uses the signed URL to display the image
 
 ## Important Notes
 
-1. **Cloudinary's Authentication**: When files are uploaded with `privateFiles` enabled, Cloudinary automatically creates authenticated URLs. These URLs already include authentication (the `s--...--` signature) and work without additional tokens.
+1. **Per-file Privacy Control**: When `privateFiles` is enabled on a collection, users can check/uncheck the "Private File" checkbox for individual files. This provides granular control over which files require authentication.
 
-2. **Per-file control**: Even when `privateFiles` is enabled for a collection, users can now uncheck the "Private File" checkbox to make individual files public.
+2. **Client-side Imports**: Always use `'payload-storage-cloudinary/client'` for browser code to avoid server dependencies:
+   ```typescript
+   // ✅ Correct - client-side import
+   import { fetchSignedURL, useSignedURL } from 'payload-storage-cloudinary/client'
+   
+   // ❌ Wrong - includes server dependencies
+   import { fetchSignedURL } from 'payload-storage-cloudinary'
+   ```
 
-3. **Client-side imports**: Always use `'payload-storage-cloudinary/client'` for browser code to avoid server dependencies.
+3. **Authentication Methods**: The plugin supports both cookie-based and JWT token authentication for flexible integration.
 
 ## API Endpoints
 
@@ -127,7 +134,7 @@ The plugin now provides built-in helper functions for easier frontend integratio
 ### Using the Built-in Helpers
 
 ```typescript
-import { fetchSignedURL, useSignedURL, PrivateImage, requiresSignedURL, getImageURL } from 'payload-storage-cloudinary'
+import { fetchSignedURL, useSignedURL, createPrivateImageComponent, requiresSignedURL, getImageURL } from 'payload-storage-cloudinary/client'
 
 // 1. Simple fetch for a signed URL
 const url = await fetchSignedURL('media', docId)
@@ -144,11 +151,15 @@ const imageUrl = await getImageURL(doc, 'media')
 ### React Hook with Auto-refresh
 
 ```tsx
-import { useSignedURL } from 'payload-storage-cloudinary'
+import React from 'react'
+import { useSignedURL } from 'payload-storage-cloudinary/client'
 
 function ProtectedImage({ doc }) {
   // Automatically refreshes before expiry
-  const { url, loading, error } = useSignedURL('media', doc?.id)
+  const { url, loading, error } = useSignedURL('media', doc?.id, {
+    react: React, // Required for Next.js
+    refetchBuffer: 300, // Refetch 5 minutes before expiry
+  })
   
   if (loading) return <div>Loading...</div>
   if (error) return <div>Error: {error.message}</div>
@@ -161,7 +172,11 @@ function ProtectedImage({ doc }) {
 ### Pre-built React Component
 
 ```tsx
-import { PrivateImage } from 'payload-storage-cloudinary'
+import React from 'react'
+import { createPrivateImageComponent } from 'payload-storage-cloudinary/client'
+
+// Create the component once
+const PrivateImage = createPrivateImageComponent(React)
 
 // Simple usage
 <PrivateImage 
@@ -169,13 +184,14 @@ import { PrivateImage } from 'payload-storage-cloudinary'
   collection="media" 
   alt="Protected content"
   className="w-full h-auto"
+  fallback={<div>Loading...</div>}
 />
 ```
 
 ### Gallery with Batch URLs
 
 ```typescript
-import { fetchSignedURLs } from 'payload-storage-cloudinary'
+import { fetchSignedURLs } from 'payload-storage-cloudinary/client'
 
 // Using the built-in helper
 async function loadGallery(imageIds) {
@@ -188,7 +204,7 @@ async function loadGalleryManual(imageIds) {
   const response = await fetch('/api/media/signed-urls', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin', // Important for authentication
+    credentials: 'include', // Important for authentication
     body: JSON.stringify({ ids: imageIds })
   })
   

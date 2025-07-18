@@ -1,14 +1,16 @@
 # Cloudinary Folder Management
 
-Organize your uploads into folders with flexible configuration options.
+Organize your uploads into folders with flexible configuration options and smart asset management.
 
 ## Overview
 
 The folder management feature provides:
 - **Static folders** - Set a fixed folder for all uploads
 - **Dynamic folders** - Let users specify folders during upload
+- **Smart asset moving** - Move files between folders without re-uploading
 - **Custom field names** - Use your own field name for folder selection
 - **Automatic folder creation** - Folders are created automatically in Cloudinary
+- **Folder validation** - Automatic cleanup of invalid characters and paths
 
 ## Configuration
 
@@ -40,6 +42,11 @@ cloudinaryStorage({
 })
 ```
 
+This adds a text field where users can type folder paths like:
+- `products/electronics`
+- `blog/2024/july`
+- `team/marketing`
+
 ### Custom Field Implementation
 
 ```typescript
@@ -66,11 +73,30 @@ const Media: CollectionConfig = {
       label: 'Upload Folder',
       admin: {
         description: 'Enter folder path (e.g., products/2024)',
+        placeholder: 'uploads',
+      },
+      validate: (value) => {
+        if (value && !value.match(/^[a-zA-Z0-9\/_-]+$/)) {
+          return 'Folder name can only contain letters, numbers, hyphens, underscores, and slashes'
+        }
+        return true
       },
     },
   ],
 }
 ```
+
+## Smart Asset Moving
+
+When you change the folder path for an existing file, the plugin automatically:
+
+1. **Uses Cloudinary's rename API** to move the asset
+2. **Preserves the same public ID** and version
+3. **Updates folder location** without re-uploading
+4. **Maintains all existing URLs** and transformations
+5. **Updates stored URLs** to reflect the new location
+
+This means you can reorganize your files without losing any data or creating duplicates.
 
 ## How It Works
 
@@ -78,6 +104,8 @@ const Media: CollectionConfig = {
 2. **Dynamic Mode**: Users enter folder path in a text field
 3. **Auto-Creation**: Folders are created automatically on first upload
 4. **Path Cleaning**: Leading/trailing slashes are removed automatically
+5. **Validation**: Invalid characters are filtered out
+6. **Asset Moving**: Existing files are moved when folder changes
 
 ## Examples
 
@@ -87,6 +115,14 @@ const Media: CollectionConfig = {
 - `/products/` → `products/` (cleaned)
 - `products/2024/summer` → `products/2024/summer/`
 - `` (empty) → uses default or root folder
+- `products with spaces!` → `products_with_spaces` (cleaned)
+
+### Moving Assets
+1. Upload file to `uploads/temp/`
+2. Change folder to `products/2024/`
+3. Plugin moves asset in Cloudinary
+4. All URLs remain functional
+5. Asset appears in new folder
 
 ## Configuration Options
 
@@ -114,13 +150,33 @@ const Media: CollectionConfig = {
 
 2. **Naming Conventions**:
    - Use lowercase: `products` not `Products`
-   - Use hyphens: `product-images` not `product_images`
+   - Use hyphens or underscores: `product-images` or `product_images`
    - Be descriptive: `blog-posts/2024` not `bp/24`
+   - Avoid special characters: `!@#$%^&*()` will be cleaned
 
 3. **Organization Tips**:
    - By date: `media/2024/01`
    - By type: `images/banners`
    - By feature: `products/thumbnails`
+   - By project: `clients/acme-corp`
+
+4. **Moving Strategy**:
+   - Use folder changes instead of re-uploading
+   - Plan folder structure before uploading many files
+   - Test folder moves with a few files first
+   - Consider URL implications when moving public files
+
+## Folder Validation
+
+The plugin automatically cleans folder paths:
+
+| Input | Output | Reason |
+|-------|--------|---------|
+| `/uploads/` | `uploads` | Removes leading/trailing slashes |
+| `products with spaces` | `products_with_spaces` | Replaces spaces with underscores |
+| `products!!` | `products` | Removes special characters |
+| `PRODUCTS` | `PRODUCTS` | Preserves case (case-sensitive) |
+| `products//2024` | `products/2024` | Removes duplicate slashes |
 
 ## Complete Example
 
@@ -160,6 +216,25 @@ export default buildConfig({
 })
 ```
 
+## Technical Details
+
+### Folder Creation
+- Folders are created automatically on first upload
+- No need to pre-create folders in Cloudinary
+- Nested folders are created as needed
+
+### Asset Moving
+- Uses Cloudinary's `rename` API internally
+- Preserves all metadata and transformations
+- Updates stored URLs automatically
+- Maintains version history
+
+### Validation
+- Removes invalid characters automatically
+- Normalizes path separators
+- Prevents empty or invalid folder names
+- Provides helpful error messages
+
 ## Notes
 
 - Cloudinary automatically creates folders on first upload
@@ -167,3 +242,5 @@ export default buildConfig({
 - Empty folders don't appear in Cloudinary until they contain files
 - Folder names are case-sensitive in Cloudinary
 - Use forward slashes (/) for folder hierarchy
+- Moving assets preserves all existing URLs and transformations
+- The plugin handles all folder validation and cleanup automatically

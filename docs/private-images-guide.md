@@ -7,6 +7,7 @@ A comprehensive guide for implementing and using private images with authenticat
 This guide covers everything you need to know about working with private images, including:
 - Per-file privacy control
 - Authentication and authorization
+- Public previews with watermarks/blur
 - Frontend implementation patterns
 - Common troubleshooting
 
@@ -14,7 +15,7 @@ This guide covers everything you need to know about working with private images,
 
 ### Per-File Privacy Control
 
-Unlike collection-level privacy settings, the plugin now supports per-file privacy control:
+Unlike collection-level privacy settings, the plugin supports per-file privacy control:
 
 1. **Collection Configuration**: When you set `privateFiles: true` on a collection, it enables the privacy feature but doesn't force all files to be private
 2. **User Control**: Each upload shows a "Private File" checkbox that users can check/uncheck
@@ -31,6 +32,13 @@ User → Frontend → Payload API → Access Control → Cloudinary Signed URL �
 3. **Access Control**: Payload checks user permissions for the document
 4. **URL Generation**: If authorized, Payload generates a time-limited Cloudinary URL
 5. **Image Delivery**: Frontend uses the signed URL to display the image
+
+### Public Previews
+
+For private files, you can generate public previews with watermarks or blur effects:
+- **Watermarked Preview**: Shows a watermarked version publicly
+- **Blurred Preview**: Shows a blurred version publicly
+- **Combined Preview**: Applies both transformation presets AND watermark/blur
 
 ## Configuration
 
@@ -52,17 +60,51 @@ cloudinaryStorage({
 })
 ```
 
-### With Authentication Requirements
+### With Public Previews
+
+```typescript
+collections: {
+  media: {
+    privateFiles: true,
+    transformations: {
+      preserveOriginal: true,
+      publicTransformation: {
+        enabled: true,
+        watermark: {
+          defaultText: 'PREVIEW',
+          style: {
+            fontFamily: 'Arial',
+            fontSize: 50,
+            color: 'rgb:808080',
+            opacity: 50,
+            angle: -45,
+          },
+        },
+        blur: {
+          effect: 'blur:2000',
+          quality: 30,
+        },
+      },
+    },
+  },
+}
+```
+
+### With Custom Authentication
 
 ```typescript
 collections: {
   documents: {
     privateFiles: {
       enabled: true,
-      customAuthCheck: (req, doc) => {
-        // Require user to be logged in
-        return !!req.user
-      }
+      expiresIn: 7200, // 2 hours
+      customAuthCheck: async (req, doc) => {
+        // Only allow access to the owner
+        if (doc.owner !== req.user?.id) {
+          return false
+        }
+        return true
+      },
     },
   },
 }
@@ -77,16 +119,54 @@ collections: {
       enabled: true,
       expiresIn: 7200, // 2 hours
       customAuthCheck: async (req, doc) => {
-        // Custom authorization logic
-        if (doc.owner !== req.user?.id) {
-          return false
+        // Allow access to owner or users with specific roles
+        if (doc.owner === req.user?.id) {
+          return true
         }
-        return true
+        
+        if (req.user?.roles?.includes('admin')) {
+          return true
+        }
+        
+        return false
       },
     },
   },
 }
 ```
+
+## Required Collection Configuration
+
+For private files to work properly, you must configure access control on your collection:
+
+```typescript
+{
+  slug: 'media',
+  access: {
+    read: () => true, // Allow read attempts, we'll check in afterRead
+  },
+  hooks: {
+    afterRead: [
+      ({ doc, req }) => {
+        // Check if this specific file requires authentication
+        if ((doc.requiresSignedURL || doc.isPrivate) && !req.user) {
+          return null // Return null for unauthorized access
+        }
+        return doc
+      },
+    ],
+  },
+  upload: {
+    disableLocalStorage: true,
+  },
+  // ... rest of config
+}
+```
+
+This ensures that:
+- Public files are accessible to everyone
+- Private files return null for unauthenticated users
+- The error is properly handled by the signed URL endpoint
 
 ## Frontend Implementation
 
@@ -105,20 +185,24 @@ import { fetchSignedURL } from 'payload-storage-cloudinary'
 ### 1. Simple Image Display
 
 ```tsx
-import { fetchSignedURL } from 'payload-storage-cloudinary/client'
+import { getImageURL } from 'payload-storage-cloudinary/client'
 
-async function displayPrivateImage(docId: string) {
-  try {
-    // Fetch the signed URL
-    const url = await fetchSignedURL('media', docId)
-    
-    // Display the image
-    const img = document.createElement('img')
-    img.src = url
-    document.body.appendChild(img)
-  } catch (error) {
-    console.error('Failed to load private image:', error)
-  }
+function SmartImage({ doc, collection = 'media' }) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // This helper handles both public and private files
+    getImageURL(doc, collection)
+      .then(setUrl)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [doc, collection])
+
+  if (loading) return <div>Loading...</div>
+  if (!url) return <div>Image not available</div>
+
+  return <img src={url} alt={doc.alt} />
 }
 ```
 
@@ -128,7 +212,7 @@ async function displayPrivateImage(docId: string) {
 import React, { useState, useEffect } from 'react'
 import { fetchSignedURL, requiresSignedURL } from 'payload-storage-cloudinary/client'
 
-function SmartImage({ doc, collection = 'media' }) {
+function PrivateImageComponent({ doc, collection = 'media' }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -137,7 +221,8 @@ function SmartImage({ doc, collection = 'media' }) {
     async function loadImage() {
       // Check if this image needs a signed URL
       if (!requiresSignedURL(doc)) {
-        setImageUrl(doc.url)
+        // Use the best available URL for public files
+        setImageUrl(doc.transformedUrl || doc.url)
         return
       }
 
@@ -190,10 +275,93 @@ function PrivateImageWithHook({ doc }) {
 }
 ```
 
-### 4. Gallery Implementation
+### 4. Using the Pre-built Component
 
 ```tsx
-import { fetchSignedURLs, requiresSignedURL } from 'payload-storage-cloudinary'
+import React from 'react'
+import { createPrivateImageComponent } from 'payload-storage-cloudinary/client'
+
+// Create the component once
+const PrivateImage = createPrivateImageComponent(React)
+
+function MyComponent({ doc }) {
+  return (
+    <PrivateImage 
+      doc={doc} 
+      collection="media" 
+      alt="My private image"
+      className="w-full h-auto"
+      fallback={<div>Loading...</div>}
+    />
+  )
+}
+```
+
+## Working with Public Previews
+
+### Basic Public Preview
+
+```tsx
+function ImageWithPreview({ doc }) {
+  if (!doc.isPrivate) {
+    // Public file - use the best available URL
+    const imageUrl = doc.transformedUrl || doc.url
+    return <img src={imageUrl} alt={doc.alt} />
+  }
+
+  // Private file - show public preview if available
+  if (doc.publicTransformationUrl) {
+    return (
+      <div>
+        <img src={doc.publicTransformationUrl} alt={`${doc.alt} - Preview`} />
+        <p>This is a preview. <a href="/login">Login</a> to see full quality.</p>
+      </div>
+    )
+  }
+
+  // No public preview - require authentication
+  return <div>This image requires authentication</div>
+}
+```
+
+### Combined Presets and Public Previews
+
+```tsx
+function AdvancedImageDisplay({ doc }) {
+  if (!doc.isPrivate) {
+    // Public file - use transformed URL if available
+    return <img src={doc.transformedUrl || doc.url} alt={doc.alt} />
+  }
+
+  // Private file with combined preview (presets + watermark/blur)
+  if (doc.previewUrl) {
+    return (
+      <div>
+        <img src={doc.previewUrl} alt={`${doc.alt} - Preview`} />
+        <p>Preview with applied transformations and watermark</p>
+      </div>
+    )
+  }
+
+  // Fallback to basic public preview
+  if (doc.publicTransformationUrl) {
+    return (
+      <div>
+        <img src={doc.publicTransformationUrl} alt={`${doc.alt} - Preview`} />
+        <p>This is a preview. Login to see full quality.</p>
+      </div>
+    )
+  }
+
+  // No preview available
+  return <div>Authentication required</div>
+}
+```
+
+### Gallery with Mixed Public/Private Images
+
+```tsx
+import { fetchSignedURLs, requiresSignedURL } from 'payload-storage-cloudinary/client'
 
 function PrivateGallery({ images }) {
   const [imageUrls, setImageUrls] = useState<Record<string, string>>({})
@@ -208,7 +376,8 @@ function PrivateGallery({ images }) {
       // Create initial URL map with public images
       const urlMap: Record<string, string> = {}
       publicImages.forEach(img => {
-        urlMap[img.id] = img.url
+        // Use the best available URL for public images
+        urlMap[img.id] = img.transformedUrl || img.url
       })
 
       // Fetch signed URLs for private images
@@ -230,12 +399,18 @@ function PrivateGallery({ images }) {
   return (
     <div className="grid grid-cols-3 gap-4">
       {images.map(image => (
-        <img 
-          key={image.id}
-          src={imageUrls[image.id]}
-          alt={image.alt}
-          className="w-full h-auto"
-        />
+        <div key={image.id} className="relative">
+          <img 
+            src={imageUrls[image.id] || image.publicTransformationUrl || '/placeholder.jpg'}
+            alt={image.alt}
+            className="w-full h-auto"
+          />
+          {image.isPrivate && !imageUrls[image.id] && (
+            <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+              <span className="text-white">Private Image</span>
+            </div>
+          )}
+        </div>
       ))}
     </div>
   )
@@ -281,84 +456,6 @@ async function getPrivateImageUrl(docId: string) {
 }
 ```
 
-## Common Patterns
-
-### 1. Mixed Public/Private Collection
-
-```tsx
-function MediaDisplay({ media }) {
-  // The helper functions handle both cases
-  const [url, setUrl] = useState<string | null>(null)
-
-  useEffect(() => {
-    getImageURL(media, 'media').then(setUrl)
-  }, [media])
-
-  return url ? <img src={url} alt={media.alt} /> : null
-}
-```
-
-### 2. Conditional Privacy Based on User
-
-```typescript
-// In your collection config
-privateFiles: {
-  enabled: true,
-  customAuthCheck: async (req, doc) => {
-    // Public for the owner, private for others
-    if (doc.owner === req.user?.id) {
-      return true
-    }
-    
-    // Check if user has access through sharing
-    if (doc.sharedWith?.includes(req.user?.id)) {
-      return true
-    }
-    
-    return false
-  },
-}
-```
-
-### 3. Watermarked Public Preview
-
-```typescript
-import { getTransformationUrl } from 'payload-storage-cloudinary'
-
-function MediaWithPreview({ media }) {
-  const [urls, setUrls] = useState({ preview: null, full: null })
-
-  useEffect(() => {
-    async function loadUrls() {
-      // Public watermarked preview
-      const previewUrl = getTransformationUrl({
-        publicId: media.cloudinaryPublicId,
-        version: media.cloudinaryVersion,
-        customTransformations: {
-          overlay: 'watermark',
-          gravity: 'center',
-          opacity: 30,
-        },
-      })
-
-      // Full image (might need signed URL)
-      const fullUrl = await getImageURL(media, 'media')
-
-      setUrls({ preview: previewUrl, full: fullUrl })
-    }
-
-    loadUrls()
-  }, [media])
-
-  return (
-    <div>
-      <img src={urls.preview} alt="Preview" />
-      {urls.full && <a href={urls.full}>Download Full Image</a>}
-    </div>
-  )
-}
-```
-
 ## Complete Working Example
 
 Here's a full example that works with Next.js App Router:
@@ -371,37 +468,38 @@ import {
   fetchSignedURL, 
   useSignedURL, 
   requiresSignedURL,
-  createPrivateImageComponent 
+  createPrivateImageComponent,
+  getImageURL 
 } from 'payload-storage-cloudinary/client'
 
 // Create the component once
 const PrivateImage = createPrivateImageComponent(React)
 
-// Example 1: Using fetchSignedURL directly
-function DirectFetchExample({ docId }: { docId: string }) {
+// Example 1: Smart component that handles both public and private
+function SmartImageExample({ doc }: { doc: any }) {
   const [url, setUrl] = useState<string>('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchSignedURL('documents', docId)
+    getImageURL(doc, 'media')
       .then(setUrl)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [docId])
+  }, [doc])
 
   if (loading) return <div>Loading...</div>
-  return <img src={url} alt="Private document" />
+  return <img src={url} alt={doc.alt} />
 }
 
-// Example 2: Using the hook
-function HookExample({ docId }: { docId: string }) {
-  const { url, loading, error } = useSignedURL('documents', docId, {
+// Example 2: Using the hook for private files
+function HookExample({ doc }: { doc: any }) {
+  const { url, loading, error } = useSignedURL('media', doc?.id, {
     react: React
   })
 
   if (loading) return <div>Loading...</div>
   if (error) return <div>Error: {error.message}</div>
-  return <img src={url!} alt="Private document" />
+  return <img src={url!} alt={doc.alt} />
 }
 
 // Example 3: Using the pre-built component
@@ -409,19 +507,56 @@ function ComponentExample({ doc }: { doc: any }) {
   return (
     <PrivateImage 
       doc={doc} 
-      collection="documents" 
-      alt="Private document"
+      collection="media" 
+      alt="My image"
+      className="w-full h-auto"
       fallback={<div>Loading...</div>}
     />
   )
+}
+
+// Example 4: With public preview support
+function PreviewExample({ doc }: { doc: any }) {
+  if (!doc.isPrivate) {
+    return <img src={doc.transformedUrl || doc.url} alt={doc.alt} />
+  }
+
+  // Show public preview if available
+  if (doc.previewUrl) {
+    return (
+      <div>
+        <img src={doc.previewUrl} alt={`${doc.alt} - Preview`} />
+        <p>This is a preview with transformations and watermark</p>
+      </div>
+    )
+  }
+
+  // Use the hook for authenticated access
+  return <HookExample doc={doc} />
 }
 ```
 
 ## Troubleshooting
 
-### Issue: "Private File" checkbox won't uncheck
+### Issue: "Private File" checkbox behavior
 
-**Solution**: This has been fixed in the latest version. The upload handler now respects the user's checkbox selection.
+**How it works**: 
+- When `privateFiles` is enabled, each upload gets a checkbox
+- Checked = Private (requires authentication)
+- Unchecked = Public (accessible to everyone)
+- The plugin respects this per-file setting throughout the system
+
+### Expected HTTP Status Codes
+
+When testing private file access:
+
+**Authenticated users:**
+- Direct media access (`/api/media/{id}`): 200 OK
+- Signed URL endpoint (`/api/media/signed-url/{id}`): 200 OK with URL
+
+**Unauthenticated users accessing private files:**
+- Direct media access: Returns null in afterRead hook
+- Signed URL endpoint: 403 Forbidden
 
 ### Issue: Getting 403 Forbidden
 
@@ -465,11 +600,12 @@ privateFiles: {
 
 ## Best Practices
 
-1. **Cache Management**: Store signed URLs in state/cache until close to expiry
-2. **Error Boundaries**: Wrap image components in error boundaries
-3. **Loading States**: Always show loading states for better UX
-4. **Batch Loading**: Use batch endpoints for galleries
-5. **Progressive Enhancement**: Show low-res previews while loading
+1. **Use the right helper**: Use `getImageURL()` for mixed collections, `fetchSignedURL()` for known private files
+2. **Handle loading states**: Always show loading states for better UX
+3. **Implement error boundaries**: Wrap image components in error boundaries
+4. **Cache management**: Store signed URLs in state/cache until close to expiry
+5. **Progressive enhancement**: Show public previews while loading full images
+6. **Batch loading**: Use batch endpoints for galleries
 
 ## Security Considerations
 
@@ -478,6 +614,7 @@ privateFiles: {
 3. **Use appropriate expiration times** - shorter is more secure
 4. **Monitor usage** for unusual access patterns
 5. **Implement rate limiting** on signed URL endpoints
+6. **Use HTTPS** for all requests
 
 ## Performance Tips
 
@@ -486,7 +623,7 @@ privateFiles: {
    const link = document.createElement('link')
    link.rel = 'preload'
    link.as = 'image'
-   link.href = await fetchSignedURL('media', docId)
+   link.href = await getImageURL(doc, 'media')
    document.head.appendChild(link)
    ```
 
@@ -503,3 +640,4 @@ privateFiles: {
 
 3. **Implement retry logic** for failed requests
 4. **Use service workers** for offline support (with careful cache management)
+5. **Show public previews** while loading authenticated versions

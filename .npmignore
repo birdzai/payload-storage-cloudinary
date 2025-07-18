@@ -26,6 +26,10 @@ vitest.config.ts
 # Test files
 *.test.ts
 *.spec.ts
+*.test.js
+*.spec.js
+__tests__/
+test/
 coverage/
 .nyc_output/
 

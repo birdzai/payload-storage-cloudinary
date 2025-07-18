@@ -126,6 +126,19 @@ export const commonPresets: TransformationPreset[] = [
     },
   },
   {
+    name: 'preview',
+    label: 'Blurred Preview',
+    description: 'Heavily blurred preview for private content',
+    transformations: {
+      quality: 30,
+      fetch_format: 'auto',
+      effect: 'blur:2000',
+      width: 600,
+      height: 600,
+      crop: 'limit',
+    },
+  },
+  {
     name: 'grayscale',
     label: 'Grayscale',
     description: 'Convert to black and white',

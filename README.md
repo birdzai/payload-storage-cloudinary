@@ -5,11 +5,13 @@ A powerful Cloudinary storage adapter for Payload CMS v3 that replaces local fil
 ## Features
 
 - 🚀 **Seamless Cloudinary Integration** - Direct upload to Cloudinary with automatic URL generation
-- 📁 **Dynamic Folder Management** - Type folder paths or use custom field components
-- 📂 **Smart Folder Organization** - Auto-create folders on upload
-- 🎨 **Transformation Presets** - Define reusable image transformation sets
-- 📤 **Upload Queue System** - Handle large files with progress tracking
-- 🔒 **Signed URLs** - Secure, time-limited access to private content
+- 📁 **Dynamic Folder Management** - Type folder paths dynamically per upload
+- 📂 **Smart Folder Organization** - Auto-create folders and move assets on folder change
+- 🎨 **Transformation Presets** - Define reusable image transformation sets with multi-select support
+- 📤 **Upload Queue System** - Handle large files with progress tracking and chunked uploads
+- 🔒 **Private Files with Signed URLs** - Secure, time-limited access with per-file privacy control
+- 🌊 **Public Previews** - Watermarked or blurred public previews for private files
+- 🚫 **Smart Re-upload Prevention** - Prevents duplicate uploads when updating document fields
 - 🌍 **Global CDN** - Fast content delivery worldwide
 - 📱 **Responsive Images** - Automatic format and quality optimization
 
@@ -73,6 +75,19 @@ const Media: CollectionConfig = {
 }
 ```
 
+## Understanding URL Fields
+
+When you upload a file, the plugin creates several URL fields:
+
+- **`url`** - The main URL field (always contains the original URL when `preserveOriginal: true`)
+- **`originalUrl`** - Direct URL to the original file without any transformations
+- **`transformedUrl`** - URL with selected transformation presets applied (only when presets are selected)
+- **`thumbnailURL`** - Always a 150x150 thumbnail for admin UI display
+- **`publicTransformationUrl`** - Public URL with watermark/blur for private files (when enabled)
+- **`previewUrl`** - Combines transformation presets with watermark/blur for private files
+
+**Important:** When `preserveOriginal: true` (recommended), transformations are ONLY applied via URL parameters, never during upload. This ensures your original files remain untouched in Cloudinary.
+
 ## Basic Configuration Examples
 
 ### Simple Setup
@@ -96,85 +111,43 @@ collections: {
 collections: {
   media: {
     transformations: {
-      quality: 'auto',
-      fetch_format: 'auto',
+      default: {
+        quality: 'auto',
+        fetch_format: 'auto',
+      },
+      preserveOriginal: true, // Recommended: keeps original file untransformed
     },
   },
 }
 ```
 
-**Note:** These transformations are applied to the `url` field. The `thumbnailURL` always uses a 150x150 thumbnail. See the [Frontend Transformations Guide](./docs/frontend-transformations.md) to apply different transformations on your frontend.
-
 ## Advanced Features
 
 ### Dynamic Folders
+
+Allow users to organize uploads into custom folders:
 
 ```typescript
 collections: {
   media: {
     folder: {
       path: 'uploads', // Default folder
-      enableDynamic: true, // Let users type folder path per upload
-      fieldName: 'cloudinaryFolder', // Custom field name
+      enableDynamic: true, // Adds a text field for custom folder paths
+      fieldName: 'cloudinaryFolder', // Custom field name (optional)
     },
   },
 }
 ```
 
-Or use the shorthand for just a default folder:
+**Features:**
+- Users can type paths like `products/2024` or `blog/images`
+- Folders are automatically created in Cloudinary
+- **Smart Asset Moving**: When you change the folder, the plugin moves the asset instead of re-uploading
+- Uses Cloudinary's rename API to preserve the same asset
 
-```typescript
-collections: {
-  media: {
-    folder: 'uploads',
-  },
-}
-```
+### Transformation Presets with Multi-Select
 
-**Folder Options:**
-- `enableDynamic`: Allows users to type custom folder paths
-- `path`: Default folder path
-- `fieldName`: Custom name for the folder field (default: 'cloudinaryFolder')
-- `skipFieldCreation`: Don't create the field automatically
-
-**Automatic Folder Moves:**
-When `enableDynamic` is true, the plugin automatically detects folder changes and moves the asset in Cloudinary instead of creating a duplicate. This uses Cloudinary's rename API to preserve the same asset while updating its location.
-
-**Custom Folder Selection Field:**
-
-If you want to add a dropdown selector for existing Cloudinary folders, you can implement a custom field component. The plugin provides a `getCloudinaryFolders` helper function:
-
-```typescript
-import { getCloudinaryFolders } from 'payload-storage-cloudinary'
-
-// In your custom field component
-const folders = await getCloudinaryFolders()
-```
-
-See the [folder selection field example](./docs/examples/folder-selection-field.md) for a complete implementation that allows users to:
-- Select from existing Cloudinary folders
-- Create new folders
-- See folders in a hierarchical tree structure
-
-For custom field implementation:
-
-```typescript
-collections: {
-  media: {
-    folder: {
-      path: 'uploads',
-      enableDynamic: true,
-      skipFieldCreation: true, // Don't create the field automatically
-    },
-  },
-}
-```
-
-**Note**: When `skipFieldCreation` is true, you need to add your own `cloudinaryFolder` field to the collection.
-
-### Transformation Presets
-
-The plugin includes built-in presets and supports custom ones:
+Users can select multiple transformation presets that will be combined:
 
 ```typescript
 import { cloudinaryStorage, commonPresets } from 'payload-storage-cloudinary'
@@ -182,8 +155,13 @@ import { cloudinaryStorage, commonPresets } from 'payload-storage-cloudinary'
 collections: {
   media: {
     transformations: {
+      default: {
+        quality: 'auto',
+        fetch_format: 'auto',
+      },
       presets: commonPresets, // Built-in presets
-      enablePresetSelection: true, // Show dropdown in admin UI
+      enablePresetSelection: true, // Shows multi-select dropdown
+      preserveOriginal: true, // Recommended
     },
   },
 }
@@ -194,95 +172,59 @@ collections: {
 - `card` - 400x400 fill crop
 - `banner` - 1200x600 fill crop
 - `og-image` - 1200x630 Open Graph size
-- `avatar` - 200x200 circular crop focused on face
+- `avatar` - 200x200 circular crop with face detection
 - `blur` - Blurred preview image
+- `grayscale` - Black and white conversion
+- `pixelate` - Pixelated effect (20px blocks)
 
-**Custom Presets:**
+**How it works:**
+1. Users can select multiple presets (e.g., "Grayscale" + "Card")
+2. Transformations are combined and applied via URL only
+3. The `transformedUrl` field contains the URL with all selected transformations
+4. Original file remains untouched in Cloudinary
+
+### Private Files with Public Previews
+
+Enable watermarked or blurred public previews for private files:
+
 ```typescript
-const myPresets = {
-  ...commonPresets, // Include built-in presets
-  productHero: {
-    width: 1920,
-    height: 800,
-    crop: 'fill',
-    gravity: 'auto',
-    quality: 'auto:best',
-  },
-  productThumb: {
-    width: 300,
-    height: 300,
-    crop: 'thumb',
-  },
-}
-
 collections: {
   media: {
+    privateFiles: true, // Enable per-file privacy control
     transformations: {
-      presets: myPresets,
-      enablePresetSelection: true,
-    },
-  },
-}
-```
-
-### Private Files
-```typescript
-// Simple private files configuration:
-collections: {
-  documents: {
-    privateFiles: true, // Files require signed URLs with 1-hour expiry
-  },
-}
-
-// With custom authentication check:
-collections: {
-  documents: {
-    privateFiles: {
-      enabled: true,
-      customAuthCheck: (req, doc) => {
-        // Only allow authenticated users
-        return !!req.user
-      }
-    },
-  },
-}
-```
-
-**Important**: When `privateFiles` is enabled, Cloudinary automatically creates authenticated URLs. The plugin returns these pre-authenticated URLs instead of generating new tokens.
-
-### Transformations
-```typescript
-import { commonPresets } from 'payload-storage-cloudinary'
-
-collections: {
-  media: {
-    transformations: {
-      default: {
-        quality: 'auto',
-        fetch_format: 'auto',
+      preserveOriginal: true,
+      publicTransformation: {
+        enabled: true,
+        watermark: {
+          defaultText: 'PREVIEW',
+          style: {
+            fontFamily: 'Arial',
+            fontSize: 50,
+            color: 'rgb:808080',
+            opacity: 50,
+            angle: -45,
+          },
+        },
+        blur: {
+          effect: 'blur:2000',
+          quality: 30,
+        },
       },
-      presets: commonPresets, // Or define your own
-      enablePresetSelection: true,
-      preserveOriginal: true, // Keep original file untransformed
     },
   },
 }
 ```
 
-Or use the shorthand for just default transformations:
+**How it works:**
+1. Users mark files as private using the "Private File" checkbox
+2. They can enable "Public Preview" to generate a watermarked/blurred version
+3. Choose between "Watermark" or "Blur" transformation type
+4. The `publicTransformationUrl` provides a public URL with protection applied
+5. The `previewUrl` combines both transformation presets AND watermark/blur
 
-```typescript
-collections: {
-  media: {
-    transformations: {
-      quality: 'auto',
-      fetch_format: 'auto',
-    },
-  },
-}
-```
+### Upload Queue for Large Files
 
-### Upload Queue (for Large Files)
+Handle large files with progress tracking:
 
 ```typescript
 collections: {
@@ -291,54 +233,20 @@ collections: {
       enabled: true,
       maxConcurrentUploads: 3,
       enableChunkedUploads: true,
-      largeFileThreshold: 100, // MB - files larger use Cloudinary's upload_large API
+      largeFileThreshold: 100, // MB - files larger use chunked upload
       chunkSize: 20, // MB chunks
     },
   },
 }
 ```
 
-**Note on File Size Limits:**
-- Cloudinary has file size limits based on your plan
-- Free plans: typically 10MB for images, 100MB for videos
-- Paid plans: up to 1GB or more depending on plan
+**File Size Limits:**
 - Files over 100MB automatically use Cloudinary's `upload_large` API
+- Cloudinary limits depend on your plan:
+  - Free plans: typically 10MB for images, 100MB for videos
+  - Paid plans: up to 1GB or more
 
-### Private Files with Signed URLs
-```typescript
-collections: {
-  documents: {
-    privateFiles: true, // Enables signed URLs with default 1-hour expiry
-  },
-}
-
-// Or with custom signed URL configuration:
-collections: {
-  documents: {
-    privateFiles: {
-      enabled: true,
-      expiresIn: 7200, // 2 hours
-      authTypes: ['upload', 'authenticated'],
-      includeTransformations: true,
-    },
-  },
-}
-```
-
-When `privateFiles` is set to `true`, it automatically enables signed URLs with a default expiry of 1 hour. You can also pass a full signed URL configuration object for more control.
-
-### Control Cloudinary Deletion
-```typescript
-collections: {
-  media: {
-    deleteFromCloudinary: false, // Keep files in Cloudinary when deleted from Payload
-  },
-}
-```
-
-By default, files are deleted from Cloudinary when removed from Payload. Set `deleteFromCloudinary: false` to keep files in Cloudinary even after deletion from Payload.
-
-## Complete Example
+### Complete Example
 
 ```typescript
 import { buildConfig } from 'payload'
@@ -348,6 +256,20 @@ export default buildConfig({
   collections: [
     {
       slug: 'media',
+      access: {
+        read: () => true, // Required for private files
+      },
+      hooks: {
+        afterRead: [
+          ({ doc, req }) => {
+            // Check if file requires authentication
+            if ((doc.requiresSignedURL || doc.isPrivate) && !req.user) {
+              return null // Return null for unauthorized access
+            }
+            return doc
+          },
+        ],
+      },
       upload: {
         disableLocalStorage: true,
       },
@@ -372,7 +294,6 @@ export default buildConfig({
           folder: {
             path: 'uploads',
             enableDynamic: true,
-            fieldName: 'cloudinaryFolder',
           },
           
           // Transformation configuration
@@ -383,7 +304,26 @@ export default buildConfig({
             },
             presets: commonPresets,
             enablePresetSelection: true,
-            preserveOriginal: true,
+            preserveOriginal: true, // Recommended
+            
+            // Public preview for private files
+            publicTransformation: {
+              enabled: true,
+              watermark: {
+                defaultText: 'PREVIEW',
+                style: {
+                  fontFamily: 'Arial',
+                  fontSize: 50,
+                  color: 'rgb:808080',
+                  opacity: 50,
+                  angle: -45,
+                },
+              },
+              blur: {
+                effect: 'blur:2000',
+                quality: 30,
+              },
+            },
           },
           
           // Upload queue for large files
@@ -394,11 +334,12 @@ export default buildConfig({
             largeFileThreshold: 100, // MB
           },
           
-          // Resource type
-          resourceType: 'auto', // Automatically detect image/video/raw
+          // Security
+          privateFiles: true,
           
-          // Deletion behavior
-          deleteFromCloudinary: true, // Delete from Cloudinary when deleted in Payload (default: true)
+          // Options
+          resourceType: 'auto',
+          deleteFromCloudinary: true,
         },
       },
     }),
@@ -408,21 +349,16 @@ export default buildConfig({
 
 ## Frontend Usage
 
-When you upload a file, Cloudinary stores these fields in your document:
-- `url` - The default URL (with any default transformations applied)
-- `thumbnailURL` - A 150x150 thumbnail for admin UI
-- `cloudinaryPublicId` - The Cloudinary public ID
-- `cloudinaryVersion` - Version for cache busting
-- `transformationPreset` - Selected preset name (if preset selection is enabled)
-- `isPrivate` - Whether the file requires authentication (if privateFiles is enabled)
-- `requiresSignedURL` - Whether a signed URL is needed (if privateFiles is enabled)
+### Using the Stored URLs
 
-### Display the Original Image
 ```tsx
 function ProductImage({ doc }) {
+  // Use transformedUrl if transformations were selected, otherwise use url
+  const imageUrl = doc.transformedUrl || doc.url
+  
   return (
     <img 
-      src={doc.url} 
+      src={imageUrl} 
       alt={doc.alt}
       width={doc.width}
       height={doc.height}
@@ -431,205 +367,52 @@ function ProductImage({ doc }) {
 }
 ```
 
-### Using Common Presets
+### Applying Custom Transformations
 
-The plugin includes a set of common transformation presets that you can use immediately:
+Since transformations are applied via URL when `preserveOriginal: true`, you can easily create variations:
 
 ```typescript
-import { getTransformationUrl, commonPresets } from 'payload-storage-cloudinary'
+import { getTransformationUrl } from 'payload-storage-cloudinary'
 
-// Use a built-in preset
+// Create a thumbnail
 const thumbnailUrl = getTransformationUrl({
-  publicId: doc.cloudinaryPublicId,
-  version: doc.cloudinaryVersion,
-  presetName: 'thumbnail', // 150x150 thumb
-  presets: commonPresets,
-})
-
-const cardUrl = getTransformationUrl({
-  publicId: doc.cloudinaryPublicId,
-  version: doc.cloudinaryVersion,
-  presetName: 'card', // 400x400 fill
-  presets: commonPresets,
-})
-```
-
-### Using Stored Transformation Presets
-
-If you enable preset selection in your config, users can choose a transformation preset during upload:
-
-```typescript
-// Plugin configuration
-transformations: {
-  enablePresetSelection: true,
-  presets: commonPresets, // Shows dropdown with all presets
-}
-```
-
-The selected preset is stored in the `transformationPreset` field:
-
-```tsx
-import { getTransformationUrl, commonPresets } from 'payload-storage-cloudinary'
-
-function PresetAwareImage({ doc }) {
-  // Check if a preset was selected during upload
-  if (doc.transformationPreset) {
-    const presetUrl = getTransformationUrl({
-      publicId: doc.cloudinaryPublicId,
-      version: doc.cloudinaryVersion,
-      presetName: doc.transformationPreset, // Use the stored preset
-      presets: commonPresets,
-    })
-    return <img src={presetUrl} alt={doc.alt} />
-  }
-  
-  // Fallback to default URL
-  return <img src={doc.url} alt={doc.alt} />
-}
-```
-
-### Apply Transformations on the Frontend
-
-The `url` field contains whatever default transformations you configured. To apply different transformations on the frontend, you have several options:
-
-#### Option 1: Direct URL Manipulation (Simplest)
-```typescript
-// The URL structure is: https://res.cloudinary.com/[cloud-name]/image/upload/[transformations]/[version]/[public-id].[format]
-function getTransformedUrl(originalUrl: string, transformations: string) {
-  // Replace or add transformations in the URL
-  const parts = originalUrl.split('/upload/')
-  return `${parts[0]}/upload/${transformations}/${parts[1]}`
-}
-
-// Example usage:
-const heroUrl = getTransformedUrl(doc.url, 'w_1920,h_600,c_fill,q_auto,f_auto')
-const thumbnailUrl = getTransformedUrl(doc.url, 'w_150,h_150,c_fill,q_auto')
-```
-
-#### Option 2: Using the Helper Function (Type-safe)
-```typescript
-import { getTransformationUrl, commonPresets } from 'payload-storage-cloudinary'
-
-// Using a preset
-const thumbnailUrl = getTransformationUrl({
-  publicId: doc.cloudinaryPublicId,
-  version: doc.cloudinaryVersion,
-  presetName: 'thumbnail',
-  presets: commonPresets,
-})
-
-// Using custom transformations
-const customUrl = getTransformationUrl({
   publicId: doc.cloudinaryPublicId,
   version: doc.cloudinaryVersion,
   customTransformations: {
-    width: 800,
-    height: 400,
+    width: 200,
+    height: 200,
     crop: 'fill',
+    gravity: 'auto',
+  }
+})
+
+// Create a responsive image
+const responsiveUrl = getTransformationUrl({
+  publicId: doc.cloudinaryPublicId,
+  version: doc.cloudinaryVersion,
+  customTransformations: {
+    width: 'auto',
+    dpr: 'auto',
     quality: 'auto',
     fetch_format: 'auto',
   }
 })
-
-// Combining preset with overrides
-const modifiedPresetUrl = getTransformationUrl({
-  publicId: doc.cloudinaryPublicId,
-  version: doc.cloudinaryVersion,
-  presetName: 'card',
-  presets: commonPresets,
-  customTransformations: {
-    width: 600, // Override the preset's width
-  }
-})
 ```
 
-#### Option 3: Build Your Own URL (Most Control)
-```typescript
-// If you need full control over the URL generation
-function buildCloudinaryUrl(doc: any, transformations: Record<string, any>) {
-  const baseUrl = 'https://res.cloudinary.com/your-cloud-name/image/upload'
-  
-  // Convert transformation object to URL parameters
-  const transforms = Object.entries(transformations)
-    .map(([key, value]) => `${key}_${value}`)
-    .join(',')
-  
-  return `${baseUrl}/${transforms}/v${doc.cloudinaryVersion}/${doc.cloudinaryPublicId}`
-}
+### Handling Private Files
 
-// Example usage:
-const responsiveUrl = buildCloudinaryUrl(doc, {
-  w: 'auto',
-  q: 'auto',
-  f: 'auto',
-  dpr: 'auto',
-})
-```
-
-### Common Transformation Examples
-```typescript
-// Responsive images with srcset
-function ResponsiveImage({ doc }) {
-  const widths = [320, 640, 1024, 1920]
-  const srcSet = widths
-    .map(w => `${getTransformedUrl(doc.url, `w_${w},q_auto,f_auto`)} ${w}w`)
-    .join(', ')
-  
-  return (
-    <img 
-      src={getTransformedUrl(doc.url, 'w_1024,q_auto,f_auto')}
-      srcSet={srcSet}
-      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-      alt={doc.alt}
-    />
-  )
-}
-
-// Lazy loading with blur placeholder
-function LazyImage({ doc }) {
-  const placeholderUrl = getTransformedUrl(doc.url, 'w_50,e_blur:1000,q_1,f_auto')
-  const fullUrl = getTransformedUrl(doc.url, 'w_800,q_auto,f_auto')
-  
-  return (
-    <img 
-      src={placeholderUrl}
-      data-src={fullUrl}
-      loading="lazy"
-      alt={doc.alt}
-    />
-  )
-}
-```
-
-### Handle Private Files
-
-The plugin provides helper functions to simplify working with private files:
-
-```typescript
-import { fetchSignedURL, useSignedURL, requiresSignedURL, getImageURL } from 'payload-storage-cloudinary/client'
-
-// Check if a document needs a signed URL
-if (requiresSignedURL(doc)) {
-  const url = await fetchSignedURL('media', doc.id)
-}
-
-// Get the appropriate URL (handles both private and public files)
-const imageUrl = await getImageURL(doc, 'media')
-```
-
-For React components:
 ```tsx
 import { useSignedURL, createPrivateImageComponent } from 'payload-storage-cloudinary/client'
 import React from 'react'
 
-// Option 1: Use the hook (pass React instance)
-function MyImage({ doc }) {
+// Option 1: Use the hook
+function MyPrivateImage({ doc }) {
   const { url, loading, error } = useSignedURL('media', doc?.id, {
     react: React // Required in Next.js
   })
   
   if (loading) return <div>Loading...</div>
-  if (error) return <div>Error: {error.message}</div>
+  if (error) return <div>Error loading image</div>
   
   return url ? <img src={url} alt={doc.alt} /> : null
 }
@@ -637,63 +420,87 @@ function MyImage({ doc }) {
 // Option 2: Use the pre-built component
 const PrivateImage = createPrivateImageComponent(React)
 
-// Then use it:
-<PrivateImage doc={doc} collection="media" alt="My image" />
+<PrivateImage 
+  doc={doc} 
+  collection="media" 
+  alt="My private image"
+  className="w-full h-auto"
+/>
 ```
 
-**Important Notes**:
-1. Users can control privacy on a per-file basis. Even when `privateFiles` is enabled for a collection, users can uncheck the "Private File" checkbox to make individual files public.
-2. The plugin returns Cloudinary's pre-authenticated URLs for private files - no additional token generation is needed.
-3. Make sure to pass the React instance to hooks when using Next.js or other frameworks where React isn't on `window`.
-4. Import from `'payload-storage-cloudinary/client'` for client-side usage to avoid server-side dependencies.
+### Working with Public Previews
+
+```tsx
+function ProtectedImage({ doc }) {
+  if (!doc.isPrivate) {
+    // Public file - use normal URL
+    return <img src={doc.url} alt={doc.alt} />
+  }
+  
+  if (doc.publicTransformationUrl) {
+    // Show watermarked/blurred preview
+    return (
+      <div>
+        <img src={doc.publicTransformationUrl} alt={`${doc.alt} - Preview`} />
+        <p>This is a preview. Login to see full quality.</p>
+      </div>
+    )
+  }
+  
+  // No public preview available
+  return <div>This image requires authentication</div>
+}
+```
+
+## Important Changes in v1.0.7+
+
+### No More Re-uploads
+The plugin now intelligently prevents re-uploads when you:
+- Change transformation presets
+- Update alt text or other fields
+- Modify folder paths (uses rename instead)
+- Toggle privacy settings
+
+### URL Structure
+- `url` always contains the original URL (when `preserveOriginal: true`)
+- `transformedUrl` contains URL with transformation presets
+- `publicTransformationUrl` contains watermarked/blurred public preview
+- `previewUrl` combines presets with watermark/blur
+
+### Multi-Select Transformations
+- Transformation presets now support multiple selections
+- Selected transformations are combined in order
+- All transformations happen via URL, not during upload
 
 ## Documentation
 
-- [Frontend Transformations Guide](./docs/frontend-transformations.md) - **Start here if images look wrong**
-- [Private Images Authorization Guide](./docs/private-images-guide.md) - **Complete guide for private files**
-- [Dynamic Folders Guide](./docs/dynamic-folders.md)
-- [Folder Management Guide](./docs/folder-management.md)
-- [Transformations Guide](./docs/transformations.md)
-- [Upload Queue Guide](./docs/upload-queue.md)
-- [Signed URLs Guide](./docs/signed-urls.md)
+- [Frontend Transformations Guide](./docs/frontend-transformations.md) - Applying transformations in your app
+- [Private Images Guide](./docs/private-images-guide.md) - Complete guide for private files
+- [Dynamic Folders Guide](./docs/dynamic-folders.md) - Folder organization strategies
+- [Transformation Presets Guide](./docs/transformations.md) - Creating and using presets
+- [Upload Queue Guide](./docs/upload-queue.md) - Handling large files
+- [Public Transformation Guide](./docs/public-transformation-example.md) - Watermarks and blur effects
 
-## Known Limitations
+## TypeScript
 
-### Large File Uploads
-- Files over 100MB automatically use Cloudinary's chunked upload API
-- Upload size limits depend on your Cloudinary plan:
-  - Free plans: typically 10MB for images, 100MB for videos
-  - Paid plans: up to 1GB or more
-- Very large uploads (>500MB) may require adjusting server timeout settings
+Full TypeScript support with type definitions included:
 
+```typescript
+import type { 
+  CloudinaryStorageOptions,
+  CloudinaryCollectionConfig,
+  TransformationPreset,
+  SignedURLConfig,
+  TransformationConfig,
+  FolderConfig,
+} from 'payload-storage-cloudinary'
+```
 
 ## Requirements
 
 - Payload CMS v3.0.0 or higher
 - Node.js 18 or higher
 - Cloudinary account with API credentials
-
-## Migration from Local Storage
-
-1. Install and configure the plugin
-2. Upload new files will automatically go to Cloudinary
-3. Existing files remain in local storage (migration script coming soon)
-
-## TypeScript
-
-Full TypeScript support with type definitions included.
-
-```typescript
-import type { 
-  CloudinaryStorageOptions,
-  TransformationPreset,
-  SignedURLConfig 
-} from 'payload-storage-cloudinary'
-```
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
 
 ## License
 
@@ -703,9 +510,9 @@ MIT
 
 - [GitHub Issues](https://github.com/nlvcodes/payload-storage-cloudinary/issues)
 - [Documentation](./docs)
-- [Discord Community](https://discord.gg/payloadcms)
-- [Cloudinary Docs](https://cloudinary.com/documentation)
+- [Payload CMS Discord](https://discord.gg/payloadcms)
+- [Cloudinary Documentation](https://cloudinary.com/documentation)
 
 ## Credits
 
-Built for the Payload CMS community.
+Built with ❤️ for the Payload CMS community.

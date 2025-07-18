@@ -146,7 +146,7 @@ export function useSignedURL(
   }
   
   const [url, setUrl] = React.useState(null) as [string | null, (value: string | null) => void]
-  const [loading, setLoading] = React.useState(true) as [boolean, (value: boolean) => void]
+  const [loading, setLoading] = React.useState(!!docId) as [boolean, (value: boolean) => void]
   const [error, setError] = React.useState(null) as [Error | null, (value: Error | null) => void]
   
   React.useEffect(() => {
@@ -243,6 +243,26 @@ export function createPrivateImageComponent(React: any) {
     className?: string
     fallback?: any
   }) {
+    // Early return if no document
+    if (!doc) {
+      return null
+    }
+    
+    // Check if the document actually requires a signed URL
+    const needsSignedUrl = requiresSignedURL(doc)
+    
+    // If it doesn't need a signed URL, just use the regular URL
+    if (!needsSignedUrl && doc?.url) {
+      return React.createElement('img', {
+        src: doc.url,
+        alt: alt || doc?.alt || '',
+        className: className,
+        width: doc?.width,
+        height: doc?.height
+      })
+    }
+    
+    // Otherwise, fetch the signed URL
     const { url, loading, error } = useSignedURL(collection, doc?.id, { react: React })
     
     if (loading) return fallback || React.createElement('div', null, 'Loading...')

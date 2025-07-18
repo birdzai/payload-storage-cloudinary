@@ -28,7 +28,7 @@ export function normalizeCollectionConfig(config: CloudinaryCollectionConfig): C
   }
   
   // Handle transformation configuration
-  if (config.transformations || config.transformationPresets || config.enablePresetSelection) {
+  if (config.transformations) {
     const transformConfig: TransformationConfig = {}
     
     if (config.transformations && typeof config.transformations === 'object' && !('default' in config.transformations)) {
@@ -37,17 +37,6 @@ export function normalizeCollectionConfig(config: CloudinaryCollectionConfig): C
     } else if (config.transformations && typeof config.transformations === 'object') {
       // New format
       Object.assign(transformConfig, config.transformations)
-    }
-    
-    // Map legacy fields
-    if (config.transformationPresets !== undefined) {
-      transformConfig.presets = config.transformationPresets
-    }
-    if (config.enablePresetSelection !== undefined) {
-      transformConfig.enablePresetSelection = config.enablePresetSelection
-    }
-    if (config.presetField !== undefined) {
-      transformConfig.presetFieldName = config.presetField
     }
     
     normalized.transformations = transformConfig

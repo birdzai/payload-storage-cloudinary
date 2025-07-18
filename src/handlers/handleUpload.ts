@@ -2,12 +2,22 @@ import type { HandleUpload } from '@payloadcms/plugin-cloud-storage/types'
 import type { CloudinaryStorageOptions, CloudinaryCollectionConfig } from '../types.js'
 import { v2 as cloudinary } from 'cloudinary'
 import { queueManager } from '../queue/queueManager.js'
-import { generatePrivateUploadOptions } from '../helpers/signedURLs.js'
+import { generatePrivateUploadOptions, generateSignedURL } from '../helpers/signedURLs.js'
 import { normalizeCollectionConfig, getFolderConfig, getTransformationConfig, getSignedURLConfig } from '../helpers/normalizeConfig.js'
+import { buildWatermarkTransformation, buildImageWatermarkTransformation, buildBlurTransformation } from '../helpers/watermark.js'
 
 export const createUploadHandler = (
   options: CloudinaryStorageOptions,
 ): HandleUpload => async ({ collection, file, data }) => {
+  console.log('[Cloudinary Upload] Starting upload for collection:', collection.slug)
+  console.log('[Cloudinary Upload] File:', file.filename, 'Size:', file.filesize, 'Has buffer:', !!file.buffer)
+  console.log('[Cloudinary Upload] Existing cloudinaryPublicId:', data?.cloudinaryPublicId)
+  
+  // Note: Payload's cloud storage plugin architecture calls this handler in two scenarios:
+  // 1. When a new file is uploaded (file.buffer is present)
+  // 2. Sometimes during updates even when no new file is selected (this seems to be a Payload behavior)
+  // We handle both cases appropriately below
+  
   const collectionConfig = options.collections[collection.slug]
   
   if (!collectionConfig) {
@@ -17,8 +27,29 @@ export const createUploadHandler = (
   const rawConfig = typeof collectionConfig === 'boolean' ? {} : collectionConfig
   const config = normalizeCollectionConfig(rawConfig)
   
+  // Payload should only call this handler when there's a new file to upload
+  if (!file.buffer) {
+    // If we have an existing cloudinaryPublicId but no file buffer, this is likely an update without a new file
+    // In this case, we should not re-upload to Cloudinary
+    if (data?.cloudinaryPublicId) {
+      console.log('[Cloudinary Upload] Skipping upload - no new file provided, keeping existing Cloudinary asset')
+      return // Return early without modifying the data
+    }
+    throw new Error('No file buffer provided for upload')
+  }
+  
+  // Additional check: if we have an existing cloudinaryPublicId and the same filename,
+  // this might be an update where Payload is re-sending the same file
+  if (data?.cloudinaryPublicId && data?.filename === file.filename) {
+    console.log('[Cloudinary Upload] Same file detected (existing publicId and same filename).')
+    console.log('[Cloudinary Upload] Skipping re-upload to Cloudinary.')
+    // Skip the upload and return early - Payload is re-sending the same file
+    return
+  }
+  
   try {
     const uploadOptions = buildUploadOptions(config, file.filename, data)
+    console.log('[Cloudinary Upload] Upload options:', JSON.stringify(uploadOptions, null, 2))
     
     // Check if upload queue is enabled
     if (config.uploadQueue?.enabled) {
@@ -117,6 +148,7 @@ export const createUploadHandler = (
           uploadOptions,
           (error, result) => {
             if (error) {
+              console.error('[Cloudinary Upload] Upload error:', error)
               // Provide more specific error messages
               const errorMsg = error.message || 'Unknown error'
               if (errorMsg.includes('File size too large')) {
@@ -127,6 +159,7 @@ export const createUploadHandler = (
                 reject(error)
               }
             } else {
+              console.log('[Cloudinary Upload] Upload successful:', result?.public_id)
               resolve(result)
             }
           }
@@ -151,9 +184,12 @@ function processUploadResult(result: any, data: any, file: any, config: Cloudina
     data.cloudinaryVersion = result.version
     
     // Generate thumbnail URL for admin display - note the uppercase URL
+    // For private files, we need to ensure the thumbnail is accessible
     const thumbnailUrl = cloudinary.url(result.public_id, {
       secure: true,
       version: result.version,
+      resource_type: result.resource_type || 'image',
+      type: result.type || 'upload', // Use 'upload' type for public access
       transformation: {
         width: 150,
         height: 150,
@@ -164,9 +200,26 @@ function processUploadResult(result: any, data: any, file: any, config: Cloudina
       }
     })
     data.thumbnailURL = thumbnailUrl  // Changed to uppercase URL to match Payload's expectation
+    console.log('[Cloudinary Upload] Thumbnail URL:', thumbnailUrl)
     
-    // Store the original URL for direct access
-    data.url = result.secure_url
+    // Store the original URL (without transformations)
+    // This should be the raw URL without any transformations
+    const originalUrl = cloudinary.url(result.public_id, {
+      secure: true,
+      version: result.version,
+      resource_type: result.resource_type || 'image',
+      type: result.type || 'upload',
+      format: result.format,
+      // No transformations here - this is the original
+    })
+    data.originalUrl = originalUrl
+    
+    // Get transformation config once for reuse
+    const transformConfig = getTransformationConfig(config)
+    
+    // Store the main URL - this will be the same as originalUrl if preserveOriginal is true
+    // Transformations will be applied dynamically via afterRead hook
+    data.url = originalUrl
     
     // Store additional metadata that Payload expects
     data.filename = file.filename
@@ -182,10 +235,82 @@ function processUploadResult(result: any, data: any, file: any, config: Cloudina
       data.cloudinaryFolder = result.folder
     }
     
-    // Only mark as private if the user hasn't explicitly set it to false
-    if (config.privateFiles && data.isPrivate !== false) {
-      data.isPrivate = true
-      data.requiresSignedURL = true
+    // Handle private file settings based on user's checkbox value
+    if (config.privateFiles) {
+      const signedURLConfig = getSignedURLConfig(config)
+      
+      // If isPrivate is explicitly false, respect that
+      if (data.isPrivate === false) {
+        data.requiresSignedURL = false
+      } else {
+        // Otherwise, mark as private (default behavior)
+        data.isPrivate = true
+        data.requiresSignedURL = true
+        
+        // If public transformations are enabled, we need to generate signed URLs
+        // for the original and main URLs since the file was uploaded as public
+        if (transformConfig.publicTransformation?.enabled && signedURLConfig) {
+          // Replace URLs with signed versions
+          data.url = generateSignedURL({
+            publicId: result.public_id,
+            version: result.version,
+            resourceType: result.resource_type,
+            format: result.format,
+            transformations: transformConfig.default,
+          }, signedURLConfig)
+          
+          data.originalUrl = generateSignedURL({
+            publicId: result.public_id,
+            version: result.version,
+            resourceType: result.resource_type,
+            format: result.format,
+          }, signedURLConfig)
+        }
+      }
+    }
+    
+    // Handle public transformation URL for private files
+    if (transformConfig.publicTransformation?.enabled && data.isPrivate) {
+      const fieldName = transformConfig.publicTransformation.fieldName || 'hasPublicTransformation'
+      
+      // Only generate public transformation URL if the checkbox is checked
+      if (data[fieldName] === true) {
+        let publicTransformation
+        
+        // Get the transformation type
+        const typeFieldName = transformConfig.publicTransformation.typeFieldName || 'transformationType'
+        const transformationType = data[typeFieldName] || 'watermark'
+        
+        if (transformationType === 'watermark' && transformConfig.publicTransformation.watermark) {
+          const watermarkFieldName = transformConfig.publicTransformation.watermark.textFieldName || 'watermarkText'
+          const watermarkText = data[watermarkFieldName]
+          
+          // Build watermark transformation
+          if (transformConfig.publicTransformation.watermark.imageId) {
+            publicTransformation = buildImageWatermarkTransformation(transformConfig.publicTransformation.watermark)
+          } else {
+            publicTransformation = buildWatermarkTransformation(
+              transformConfig.publicTransformation.watermark,
+              watermarkText
+            )
+          }
+        } else if (transformationType === 'blur') {
+          // Build blur transformation
+          publicTransformation = buildBlurTransformation(transformConfig.publicTransformation.blur)
+        }
+        
+        // For public transformation URLs, we need to use 'upload' type
+        // even if the original was uploaded as 'authenticated'
+        const publicTransformationUrl = cloudinary.url(result.public_id, {
+          secure: true,
+          version: result.version,
+          resource_type: result.resource_type || 'image',
+          type: 'upload', // Always use 'upload' for public URLs
+          format: result.format,
+          transformation: publicTransformation,
+        })
+        data.publicTransformationUrl = publicTransformationUrl
+      }
     }
   }
 }
@@ -201,15 +326,14 @@ function buildUploadOptions(
   
   // Handle private files
   const signedURLConfig = getSignedURLConfig(config)
-  if (signedURLConfig) {
+  const transformConfig = getTransformationConfig(config)
+  
+  // IMPORTANT: If public transformations are enabled, we should NOT upload as authenticated
+  // because authenticated resources cannot have public transformation URLs
+  if (signedURLConfig && data && data.isPrivate !== false && !transformConfig.publicTransformation?.enabled) {
+    // Only apply private upload options if public transformations are NOT enabled
     const privateOptions = generatePrivateUploadOptions(signedURLConfig)
     Object.assign(options, privateOptions)
-    
-    // Only mark as private if the user hasn't explicitly set it to false
-    if (data && data.isPrivate !== false) {
-      data.isPrivate = true
-      data.requiresSignedURL = true
-    }
   }
   
   // Get folder configuration
@@ -248,7 +372,6 @@ function buildUploadOptions(
   }
   
   // Handle transformations
-  const transformConfig = getTransformationConfig(config)
   let transformations: Record<string, any> = {}
   
   // Start with default transformations
@@ -256,27 +379,29 @@ function buildUploadOptions(
     transformations = { ...transformConfig.default }
   }
   
-  // Apply preset if selected
-  if (transformConfig.enablePresetSelection && data) {
-    const presetField = transformConfig.presetFieldName || 'transformationPreset'
-    const selectedPreset = data[presetField]
-    
-    if (selectedPreset && transformConfig.presets) {
-      const preset = transformConfig.presets.find(p => p.name === selectedPreset)
-      if (preset) {
-        // Merge preset transformations with default transformations
-        transformations = { ...transformations, ...preset.transformations }
+  // When preserveOriginal is true, we should NEVER apply transformations during upload
+  // All transformations should be applied via URL parameters only
+  if (transformConfig.preserveOriginal) {
+    // Clear any transformations - they'll be applied via URL only
+    transformations = {}
+  } else if (!transformConfig.publicTransformation?.enabled) {
+    // Only apply transformations during upload if preserveOriginal is false
+    // Apply preset if selected
+    if (transformConfig.enablePresetSelection && data) {
+      const presetField = transformConfig.presetFieldName || 'transformationPreset'
+      const selectedPreset = data[presetField]
+      
+      if (selectedPreset && transformConfig.presets) {
+        const preset = transformConfig.presets.find(p => p.name === selectedPreset)
+        if (preset) {
+          // Merge preset transformations with default transformations
+          transformations = { ...transformations, ...preset.transformations }
+        }
       }
     }
-  }
-  
-  // Apply transformations only if we have some
-  if (Object.keys(transformations).length > 0) {
-    // If preserveOriginal is true, use eager transformations instead
-    if (transformConfig.preserveOriginal) {
-      options.eager = [{ transformation: transformations }]
-      options.eager_async = true // Process transformations asynchronously
-    } else {
+    
+    // Apply transformations only if we have some
+    if (Object.keys(transformations).length > 0) {
       options.transformation = transformations
     }
   }

@@ -1,8 +1,8 @@
 # Custom Folder Selection Field Example
 
-**Note**: The built-in folder dropdown feature has been removed from the plugin due to Payload v3 form state integration issues. This example shows how you can implement your own custom folder selection field if needed.
+**Important**: The built-in folder dropdown feature has been removed from the plugin due to Payload v3 form state integration issues. The current plugin only supports text input for dynamic folders (`enableDynamic: true`).
 
-This example demonstrates how to create a custom folder selection field that allows users to either select from existing Cloudinary folders or create new ones.
+This example shows how you can implement your own custom folder selection field if you need dropdown functionality. However, for most use cases, the built-in text input with `enableDynamic: true` is sufficient and easier to maintain.
 
 ## Implementation
 
@@ -164,23 +164,52 @@ export const FieldClient = ({ folders }: { folders: OptionObject[] }) => {
 }
 ```
 
-## Using the Helper Function
+## Recommended Approach
 
-Alternatively, you can use the `getCloudinaryFolders` helper provided by the plugin:
+Instead of implementing a custom dropdown, we recommend using the built-in dynamic folder functionality:
 
 ```typescript
-import { getCloudinaryFolders } from 'payload-storage-cloudinary'
-
-// In your custom field component
-export async function MyCustomField() {
-    const folders = await getCloudinaryFolders()
-    // Use folders in your component
-}
+// Plugin configuration
+cloudinaryStorage({
+  collections: {
+    media: {
+      folder: {
+        path: 'uploads', // Default folder
+        enableDynamic: true, // Enable text input for folders
+      },
+    },
+  },
+})
 ```
 
-## Notes
+This automatically adds a text field where users can enter folder paths like:
+- `products/electronics`
+- `blog/2024/july`
+- `team/marketing`
+
+## Benefits of Text Input Approach
+
+1. **Simplicity**: No complex form state management
+2. **Flexibility**: Users can create any folder structure
+3. **Performance**: No API calls to fetch folder lists
+4. **Reliability**: No dependency on Cloudinary API availability
+5. **Validation**: Automatic path validation and cleanup
+
+## Notes on Custom Implementation
+
+If you do implement the custom dropdown field:
 
 - The folder list is cached for 5 minutes to reduce API calls
 - Folders are displayed hierarchically with visual indicators
 - Users can switch between selecting existing folders and creating new ones
 - The field value is stored as the folder path string
+- You'll need to handle Cloudinary API rate limits and errors
+- Consider the performance impact of fetching folder lists on every page load
+
+## Migration from Dropdown to Text Input
+
+If you were using the old dropdown feature, migration is straightforward:
+
+1. Remove any custom folder selection components
+2. Update your plugin configuration to use `enableDynamic: true`
+3. The text input provides the same functionality with better UX

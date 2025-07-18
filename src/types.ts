@@ -24,6 +24,33 @@ export interface TransformationConfig {
   presetFieldName?: string
   // Ensure transformations don't override original
   preserveOriginal?: boolean
+  // Public transformation for private files (e.g., watermarked preview)
+  publicTransformation?: {
+    enabled?: boolean
+    fieldName?: string // Field name for checkbox, defaults to 'hasPublicTransformation'
+    typeFieldName?: string // Field name for transformation type selector, defaults to 'transformationType'
+    watermark?: {
+      textFieldName?: string // Field name for watermark text, defaults to 'watermarkText'
+      defaultText?: string // Default watermark text
+      imageId?: string // Alternative: use an image as watermark
+      style?: {
+        fontFamily?: string
+        fontSize?: number
+        fontWeight?: string
+        letterSpacing?: number
+        color?: string
+        opacity?: number
+        angle?: number
+        position?: string // gravity in Cloudinary terms
+      }
+    }
+    blur?: {
+      effect?: string // e.g., 'blur:2000'
+      quality?: number
+      width?: number
+      height?: number
+    }
+  }
 }
 
 export interface UploadQueueConfig {
@@ -75,9 +102,6 @@ export interface CloudinaryCollectionConfig {
   // Legacy fields for backward compatibility (will be mapped to new structure)
   enableDynamicFolders?: boolean
   folderField?: string
-  transformationPresets?: TransformationPreset[]
-  enablePresetSelection?: boolean
-  presetField?: string
   signedURLs?: SignedURLConfig // Legacy - will be mapped to privateFiles
 }
 
