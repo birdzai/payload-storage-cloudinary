@@ -45,11 +45,37 @@ export const createURLGenerator =
         ? stored
         : { ...stored, publicId: prefix ? `${prefix}/${stem}` : stem }
 
+      // A variant is delivered from the main asset, resized first, then the collection defaults
+      const resize = variantResize(data, filename)
+      const chain = [
+        ...(resize ? [resize] : []),
+        ...(Object.keys(transformations).length > 0 ? [transformations] : []),
+      ]
+
       return buildDeliveryURL(asset, {
-        transformation: Object.keys(transformations).length > 0 ? transformations : undefined,
+        transformation: chain.length > 0 ? chain : undefined,
       })
     } catch (error) {
       console.error('[Cloudinary URL] Error generating URL:', error)
       return filename
     }
   }
+
+/**
+ * The resize for an image variant: the size the transformer produced, stored on the document's
+ * `variants` entry with the variant's filename. Only the main file is uploaded (see handleUpload),
+ * so Cloudinary crops the main asset to that size, centred, as sharp's default `cover` does.
+ * shortcut: ignores a moved focal point and sharp's `contain`/`fill` fits; compute the crop from
+ * focalX/focalY when someone needs them.
+ */
+function variantResize(data: unknown, filename: string): Record<string, unknown> | undefined {
+  const variants = (data as { variants?: unknown } | undefined)?.variants
+  if (!variants || typeof variants !== 'object') return undefined
+  for (const variant of Object.values(variants as Record<string, Record<string, unknown>>)) {
+    if (variant?.filename !== filename) continue
+    const { width, height } = variant
+    if (typeof width !== 'number' || typeof height !== 'number') return undefined
+    return { width, height, crop: 'fill' }
+  }
+  return undefined
+}
