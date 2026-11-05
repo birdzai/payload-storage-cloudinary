@@ -73,8 +73,8 @@ describe('URL helpers read the delivery type from the stored record', () => {
       const body = await res.json()
 
       expect(pathOf(body.downloadUrl)).toBe(
-        // The attachment name is the stored filename, which Payload v4 suffixes with -original
-        `${BASE}/upload/fl_attachment:legacy-download-original/v${version}/${doc.cloudinaryPublicId}.png`,
+        // The attachment name is the stored filename
+        `${BASE}/upload/fl_attachment:legacy-download/v${version}/${doc.cloudinaryPublicId}.png`,
       )
     })
 

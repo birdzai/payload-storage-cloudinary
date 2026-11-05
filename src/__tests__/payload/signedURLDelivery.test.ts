@@ -74,9 +74,9 @@ describe('signed-URL endpoint delivers private files', () => {
     const res = await harness.request(`/api/media/signed-url/${doc.id}?download=true`, { user })
     const body = await res.json()
 
-    // The attachment name is the stored filename, which Payload v4 suffixes with -original
+    // The attachment name is the stored filename
     expect(pathOf(body.downloadUrl)).toMatch(
-      privateURL(doc.cloudinaryPublicId, version, 'fl_attachment:download-original/'),
+      privateURL(doc.cloudinaryPublicId, version, 'fl_attachment:download/'),
     )
   })
 

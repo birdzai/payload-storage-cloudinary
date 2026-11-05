@@ -29,7 +29,7 @@ import type { CloudinaryStorageOptions } from '../types.js'
 export const createDeleteFile =
   (options: CloudinaryStorageOptions): DeleteFile =>
   async ({ collection, req, storageFilePath }) => {
-    // A variant or `-original` handleUpload never uploaded: nothing to roll back
+    // A variant or original handleUpload never uploaded: nothing to roll back
     if (wasSkippedUpload(req, storageFilePath)) return
 
     const asset = recordedAssetFor(req, storageFilePath)

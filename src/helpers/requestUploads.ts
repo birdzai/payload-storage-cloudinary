@@ -42,7 +42,7 @@ interface RequestUploads {
   byObjectPath: Map<string, UploadedAsset>
   /** Public IDs this request destroyed, so no other delete path destroys them again. */
   destroyed: Set<string>
-  /** Storage keys of files handleUpload chose not to upload (variants, the `-original`). */
+  /** Storage keys of files handleUpload chose not to upload (variants, the untransformed original). */
   skippedKeys: Set<string>
 }
 
@@ -102,7 +102,7 @@ export const recordDocumentAsset = (
   }
   const uploads = uploadsOf(req)
   const original = doc.original as Record<string, unknown> | undefined
-  // Variants and the `-original` were never uploaded on their own (see handleUpload), and a row
+  // Variants and the original were never uploaded on their own (see handleUpload), and a row
   // from 1.x has its sizes' URLs built from the main asset too, so every key maps to it
   const variants = Object.values((doc.variants ?? doc.sizes ?? {}) as Record<string, unknown>)
   const representations = [doc, original, ...variants] as Array<Record<string, unknown> | undefined>
