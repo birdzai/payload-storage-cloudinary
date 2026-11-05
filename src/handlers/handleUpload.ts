@@ -54,11 +54,15 @@ export const createUploadHandler =
       throw new Error('No file buffer provided for upload')
     }
 
-    // Payload also passes each image variant, and the untransformed `-original` when a
-    // transformer changed the file, as its own file. generateURL builds their URLs from the main
-    // asset, so uploading them would only leave assets that nothing references or deletes. Only
-    // the main file is uploaded.
-    const isMainFile = file.filename === data?.filename
+    // Payload also passes each image variant, and the untransformed original when a transformer
+    // changed the file, as its own file. generateURL builds their URLs from the main asset, so
+    // uploading them would only leave assets that nothing references or deletes. Only the main
+    // file is uploaded. The original can share the main filename, but Payload stores it under its
+    // own `_objectKey` folder, so the main file is the one in the document's folder.
+    const objectKey = (data as { _objectKey?: unknown } | undefined)?._objectKey
+    const isMainFile =
+      file.filename === data?.filename &&
+      (typeof objectKey !== 'string' || storageFilePath.split('/').includes(objectKey))
     if (!isMainFile) {
       recordSkippedUpload(req, storageFilePath)
       return {}
