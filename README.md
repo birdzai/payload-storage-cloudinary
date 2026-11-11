@@ -559,7 +559,7 @@ import type {
 ## Requirements
 
 - Payload CMS v4 (`payload`, `@payloadcms/ui` and `@payloadcms/plugin-cloud-storage` `^4.0.0-beta.0`). For Payload v3, use 1.x
-- React 19
+- React 19.3.1 or higher
 - Node.js 24.22.1 or higher
 - Cloudinary account with API credentials
 
@@ -606,4 +606,4 @@ Built with ❤️ for the Payload CMS community.
 
 8. **`media: true` now deletes from Cloudinary.** In 1.x a collection configured as `true` never deleted its assets. 2.0.0 applies the documented `deleteFromCloudinary: true` default to it, so deleting or replacing a document deletes its Cloudinary asset. Configure the collection as `{ deleteFromCloudinary: false }` to keep the 1.x behaviour.
 
-9. **Only the main file is kept in Cloudinary.** Payload v4 hands the adapter each image variant, and the untransformed original when a transformer changed the file. The plugin uploads only the main file, so when a transformer changes a file, the untransformed original is not kept in Cloudinary. `original.url` and every `variants.*.url` serve the main asset at full size: `generateURL` builds them from the main asset with only the collection's default transformation, as 1.x did. Making variant URLs serve the size they name is planned as a follow-up.
+9. **Only the main file is kept in Cloudinary.** Payload v4 hands the adapter each image variant, and the untransformed original when a transformer changed the file. The plugin uploads only the main file, so when a transformer changes a file, the untransformed original is not kept in Cloudinary. `original.url` and every `variants.*.url` serve the main asset at full size: `generateURL` builds them from the main asset with only the collection's default transformation, as 1.x did. Making variant URLs serve the size they name is planned as a follow-up. Payload 4.0.0-beta.8 adds a mode where only a request-time transformer applies saved `_transforms` and Payload stores just the original (`_stored: false` on the main file); the plugin does not support that mode yet.

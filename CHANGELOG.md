@@ -7,7 +7,7 @@ All notable changes to this project will be documented in this file.
 Payload v4 support. Payload v3 projects should stay on 1.x. The README's [Migrating from 1.x](./README.md#migrating-from-1x) section has the upgrade steps.
 
 ### Changed
-- **BREAKING**: requires Payload v4 (peers `payload` and `@payloadcms/ui` `^4.0.0-beta.0`), React 19 and Node.js >= 24.22.1 (Payload 4.0.0-beta.4 raised its minimum). The `@payloadcms/plugin-cloud-storage` dependency is pinned to the matching Payload beta, since `^4.0.0-beta.0` also matches Payload's `4.0.0-internal.*` builds
+- **BREAKING**: requires Payload v4 (peers `payload` and `@payloadcms/ui` `^4.0.0-beta.0`), React >= 19.3.1 (Payload 4.0.0-beta.8 raised its minimum) and Node.js >= 24.22.1 (Payload 4.0.0-beta.4 raised its minimum). The `@payloadcms/plugin-cloud-storage` dependency is pinned to the matching Payload beta, since `^4.0.0-beta.0` also matches Payload's `4.0.0-internal.*` builds
 - **BREAKING**: `cloudinaryStorage()` returns a Payload `StorageAdapter` (`{ name, collections, init }`). Register it under `storage` in the Payload config, not `plugins`
 - **BREAKING**: `originalUrl` is a virtual field, built at read time and no longer stored. Payload v4's `original` group stores `original.url` in the column it used (`original_url` on Postgres and SQLite). A 1.x row's value now reads as `original.url`, and the plugin reads it from there to find a legacy record's delivery type
 - **BREAKING**: a collection configured as `true` deletes its assets from Cloudinary on delete and replacement, the documented `deleteFromCloudinary` default. 1.x never deleted them. Use `{ deleteFromCloudinary: false }` to keep them
@@ -29,6 +29,7 @@ Payload v4 support. Payload v3 projects should stay on 1.x. The README's [Migrat
 - `copyFile` rejects, so restoring a version's file and renaming a file fail, and Payload keeps the original file
 - A versioned collection (Payload v4's default) keeps replaced and deleted files while a version references them. When Payload prunes a version, the plugin can't map its storage key to a Cloudinary asset and leaves the asset in place with a warning
 - A bulk `update` that sends a file uploads with the collection defaults: private when `privateFiles` is on, and the configured folder
+- Request-time-only transforms (Payload 4.0.0-beta.8): when only a request-time transformer can apply a document's saved `_transforms`, Payload stores just the original and marks the main file `_stored: false`. The plugin uploads only the main file, so it does not support that mode yet. Collections whose upload-time transformer (such as Sharp) applies the edits still store the main file and work as before
 
 ### Removed
 - `clientUploadContext` handling and the "no buffer but an existing public ID" early return. Payload v4 calls the adapter only for files uploaded in the request
