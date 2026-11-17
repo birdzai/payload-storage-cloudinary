@@ -17,10 +17,10 @@ A powerful Cloudinary storage adapter for Payload CMS v4 that replaces local fil
 
 ## Compatibility
 
-| Plugin version | Payload | Node.js    |
-| -------------- | ------- | ---------- |
-| 2.x            | v4      | >= 24.22.1 |
-| 1.x            | v3      | >= 18      |
+| Plugin version | Payload | Node.js                       |
+| -------------- | ------- | ----------------------------- |
+| 2.x            | v4      | 24.22.3+ or 26.13.1+ (not 25) |
+| 1.x            | v3      | >= 18                         |
 
 > **Using Payload v3?** This README documents 2.x. Install 1.x (`npm install payload-storage-cloudinary@^1`) and follow the [1.x README](https://www.npmjs.com/package/payload-storage-cloudinary/v/1.3.0) instead.
 
@@ -560,7 +560,7 @@ import type {
 
 - Payload CMS v4 (`payload`, `@payloadcms/ui` and `@payloadcms/plugin-cloud-storage` `^4.0.0-beta.0`). For Payload v3, use 1.x
 - React 19.3.1 or higher
-- Node.js 24.22.1 or higher
+- Node.js 24.22.3 or higher on 24.x, or 26.13.1 or higher (Node 25 is not supported)
 - Cloudinary account with API credentials
 
 ## License
